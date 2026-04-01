@@ -36,10 +36,10 @@ clasp create --type webapp --title "Kardex Seguro Esterilizacion"
 clasp push
 ```
 
-4. Inicializar usuario admin desde editor de Apps Script
+4. Inicializar usuario basico desde editor de Apps Script
 - Abrir Apps Script
 - Ejecutar funcion: `setupDefaultAdmin`
-- Crea: `admin / Cambiar123!`
+- Crea: `user / 123` (rol `admin`)
 
 5. Desplegar web app
 - Deploy > New deployment > Web app
@@ -47,7 +47,7 @@ clasp push
 - Who has access: segun politica (ideal: usuarios del dominio)
 
 6. Primera configuracion en la web
-- Iniciar sesion con admin
+- Iniciar sesion con `user`
 - Boton `Init hojas` para crear estructura base
 
 ## Gestion de usuarios
@@ -60,6 +60,6 @@ upsertUser('admin2', 'ClaveSegura123!', 'admin', true)
 ```
 
 ## Recomendaciones
-- Cambiar la clave de `admin` inmediatamente.
+- Cambiar la clave de `user` inmediatamente.
 - Limitar acceso del deploy a usuarios autenticados del dominio.
 - No compartir el editor de Apps Script con usuarios no admin.

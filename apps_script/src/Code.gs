@@ -252,12 +252,12 @@ function initSchema(payload) {
 
 function setupDefaultAdmin() {
   const users = getUsers_();
-  if (users.admin) return 'admin already exists';
+  if (users.user) return 'user already exists';
   const salt = Utilities.getUuid().replace(/-/g, '');
-  const hash = hashPassword_('Cambiar123!', salt);
-  users.admin = { passwordHash: hash, salt: salt, role: 'admin', active: true };
+  const hash = hashPassword_('123', salt);
+  users.user = { passwordHash: hash, salt: salt, role: 'admin', active: true };
   saveUsers_(users);
-  return 'Default admin created: admin / Cambiar123!';
+  return 'Default user created: user / 123';
 }
 
 function upsertUser(username, password, role, active) {
