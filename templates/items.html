@@ -1,0 +1,27 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+  <h2>Items</h2>
+  <form method="post" class="grid-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <label>Codigo</label>
+    <input type="text" name="code" maxlength="30" required />
+    <label>Nombre</label>
+    <input type="text" name="name" maxlength="255" required />
+    <label>Stock inicial</label>
+    <input type="number" name="initial_stock" value="0" required />
+    <button type="submit">Crear item</button>
+  </form>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Codigo</th><th>Nombre</th><th>Stock inicial</th><th>Activo</th><th>Creado</th></tr></thead>
+      <tbody>
+      {% for i in items %}
+      <tr><td>{{ i.item_code }}</td><td>{{ i.item_name }}</td><td>{{ i.initial_stock }}</td><td>{{ i.active }}</td><td>{{ i.created_at }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

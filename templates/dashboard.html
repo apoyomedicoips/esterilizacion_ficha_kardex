@@ -1,0 +1,69 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+  <h2>Stock acumulado diario</h2>
+  <form method="get" class="inline-form">
+    <label>Mes</label>
+    <input type="month" name="month" value="{{ month_value }}" />
+    <button type="submit">Ver</button>
+  </form>
+  {% if current_user.role == 'admin' %}
+  <form method="post" action="{{ url_for('admin_init_sheet') }}" class="inline-form" style="margin-top:8px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button type="submit">Inicializar hojas</button>
+  </form>
+  {% endif %}
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Codigo</th>
+          <th>Descripcion</th>
+          <th>Saldo inicio</th>
+          {% for d in days %}<th>{{ d }}</th>{% endfor %}
+          <th>Saldo final</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>{{ r.item_code }}</td>
+          <td>{{ r.item_name }}</td>
+          <td>{{ r.start_balance }}</td>
+          {% for v in r.day_values %}<td>{{ v }}</td>{% endfor %}
+          <td><b>{{ r.end_balance }}</b></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card">
+  <h3>Ultimos movimientos</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Fecha</th><th>Item</th><th>Tipo</th><th>Cant</th><th>Servicio</th><th>Ticket</th><th>Usuario</th><th>Creado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in recent %}
+        <tr>
+          <td>{{ m.movement_date }}</td>
+          <td>{{ m.item_code }}</td>
+          <td>{{ m.move_type }}</td>
+          <td>{{ m.quantity }}</td>
+          <td>{{ m.service_name }}</td>
+          <td>{{ m.ticket_no }}</td>
+          <td>{{ m.username }}</td>
+          <td>{{ m.created_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,64 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+  <h2>Registrar movimiento</h2>
+  <form method="post" class="grid-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <label>Fecha</label>
+    <input type="date" name="movement_date" required />
+
+    <label>Item</label>
+    <select name="item_code" required>
+      {% for i in items %}<option value="{{ i.item_code }}">{{ i.item_code }} - {{ i.item_name }}</option>{% endfor %}
+    </select>
+
+    <label>Servicio</label>
+    <select name="service_name" required>
+      {% for s in services %}<option value="{{ s.service_name }}">{{ s.service_name }}</option>{% endfor %}
+    </select>
+
+    <label>Tipo</label>
+    <select name="move_type" required>
+      <option value="OUT">Salida</option>
+      <option value="IN">Entrada</option>
+    </select>
+
+    <label>Cantidad</label>
+    <input type="number" name="quantity" min="1" required />
+
+    <label>Nro ticket</label>
+    <input type="text" name="ticket_no" maxlength="80" />
+
+    <label>Notas</label>
+    <textarea name="notes" maxlength="1000"></textarea>
+
+    <button type="submit">Guardar en Google Sheets</button>
+  </form>
+</section>
+
+<section class="card">
+  <h3>Historial</h3>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Fecha</th><th>Item</th><th>Tipo</th><th>Cant</th><th>Servicio</th><th>Ticket</th><th>Usuario</th><th>Creado</th></tr>
+      </thead>
+      <tbody>
+        {% for m in listing %}
+        <tr>
+          <td>{{ m.movement_id }}</td>
+          <td>{{ m.movement_date }}</td>
+          <td>{{ m.item_code }}</td>
+          <td>{{ m.move_type }}</td>
+          <td>{{ m.quantity }}</td>
+          <td>{{ m.service_name }}</td>
+          <td>{{ m.ticket_no }}</td>
+          <td>{{ m.username }}</td>
+          <td>{{ m.created_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,14 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<section class="card narrow">
+  <h2>Ingreso</h2>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <label>Usuario</label>
+    <input type="text" name="username" required />
+    <label>Contrasena</label>
+    <input type="password" name="password" required />
+    <button type="submit">Entrar</button>
+  </form>
+</section>
+{% endblock %}

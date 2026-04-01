@@ -1,0 +1,9 @@
+﻿{% extends 'base.html' %}
+{% block content %}
+<section class="card">
+  <h2>Configuration error</h2>
+  <p><b>Error:</b> {{ error }}</p>
+  <p>{{ hint }}</p>
+  <p>Verify env vars and that the service account has Editor access to the spreadsheet.</p>
+</section>
+{% endblock %}

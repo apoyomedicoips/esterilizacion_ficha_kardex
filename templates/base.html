@@ -1,0 +1,48 @@
+﻿<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kardex Seguro</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Kardex Seguro - Esterilizacion</h1>
+    {% if is_authenticated %}
+      <div class="userbar">
+        <span>{{ current_user.username }} ({{ current_user.role }})</span>
+        <form method="post" action="{{ url_for('logout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <button type="submit">Salir</button>
+        </form>
+      </div>
+    {% endif %}
+  </header>
+
+  {% if is_authenticated %}
+  <nav class="menu">
+    <a href="{{ url_for('dashboard') }}">Dashboard</a>
+    {% if current_user.role in ['admin', 'operator'] %}<a href="{{ url_for('movements') }}">Movimientos</a>{% endif %}
+    {% if current_user.role == 'admin' %}
+      <a href="{{ url_for('admin_items') }}">Items</a>
+      <a href="{{ url_for('admin_services') }}">Servicios</a>
+      <a href="{{ url_for('admin_audit') }}">Auditoria</a>
+    {% endif %}
+  </nav>
+  {% endif %}
+
+  <main>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <section class="alerts">
+          {% for category, message in messages %}
+            <div class="alert {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </section>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
