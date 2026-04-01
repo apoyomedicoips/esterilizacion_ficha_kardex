@@ -1,0 +1,272 @@
+﻿<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Kardex Seguro</title>
+  <style>
+    :root { --bg:#eef4f6; --card:#fff; --line:#d2dfe3; --text:#0f1e22; --acc:#0d6370; --err:#8c1f1f; --ok:#1a6e38; }
+    *{box-sizing:border-box} body{margin:0;background:linear-gradient(135deg,#eef4f6,#e6f0f3);color:var(--text);font-family:"Segoe UI",Tahoma,sans-serif}
+    .top{background:#083c45;color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center}
+    .menu{background:#0c5560;padding:8px 16px;display:flex;gap:10px;flex-wrap:wrap}
+    .menu button{background:#0f6c7a}
+    main{padding:16px}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px;box-shadow:0 4px 12px rgba(0,0,0,.05)}
+    label{display:block;margin-top:8px;font-weight:600} input,select,textarea,button{width:100%;margin-top:4px;padding:10px;border:1px solid #c7d8dc;border-radius:8px}
+    button{background:var(--acc);color:#fff;border:none;font-weight:700;cursor:pointer}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:10px}.grid button{grid-column:1/-1;max-width:260px}
+    .inline{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.inline input,.inline button,.inline select{width:auto}
+    table{border-collapse:collapse;width:100%;font-size:.88rem} th,td{border:1px solid #dce7ea;padding:6px 8px;white-space:nowrap} th{background:#e8f4f7}
+    .table{overflow:auto}.msg{padding:10px;border-radius:8px;margin-bottom:8px}.msg.err{background:#ffe9e9;color:var(--err)}.msg.ok{background:#e8f8ed;color:var(--ok)}
+    .hidden{display:none}.narrow{max-width:420px;margin:40px auto}
+    @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <header class="top">
+    <strong>Kardex Seguro Apps Script</strong>
+    <div id="userLabel"></div>
+  </header>
+  <nav id="menu" class="menu hidden"></nav>
+  <main id="app"></main>
+
+<script>
+const state = {
+  token: localStorage.getItem('kardex_token') || '',
+  user: null,
+  bootstrap: null,
+  dashboard: null,
+  currentView: 'dashboard'
+};
+
+function showMsg(text, ok=false){
+  const el=document.createElement('div');
+  el.className='msg '+(ok?'ok':'err');
+  el.textContent=text;
+  const app=document.getElementById('app');
+  app.prepend(el);
+  setTimeout(()=>el.remove(),6000);
+}
+
+function runServer(fn, payload){
+  return new Promise((resolve,reject)=>{
+    google.script.run
+      .withSuccessHandler(resolve)
+      .withFailureHandler(err=>reject(err && err.message ? err.message : String(err)))
+      [fn](payload);
+  });
+}
+
+function render(){
+  if(!state.token){ renderLogin(); return; }
+  renderShell();
+  if(state.currentView==='dashboard') renderDashboard();
+  if(state.currentView==='movements') renderMovements();
+  if(state.currentView==='items') renderItems();
+  if(state.currentView==='services') renderServices();
+  if(state.currentView==='audit') renderAudit();
+}
+
+function renderLogin(){
+  document.getElementById('menu').classList.add('hidden');
+  document.getElementById('userLabel').textContent='';
+  const app=document.getElementById('app');
+  app.innerHTML=`
+    <section class="card narrow">
+      <h2>Ingreso</h2>
+      <label>Usuario</label><input id="u" type="text"/>
+      <label>Contrasena</label><input id="p" type="password"/>
+      <button id="b">Entrar</button>
+      <p style="font-size:.85rem">Version <?= appVersion ?></p>
+    </section>`;
+
+  document.getElementById('b').onclick=async()=>{
+    try{
+      const username=document.getElementById('u').value.trim();
+      const password=document.getElementById('p').value;
+      const out=await runServer('login',{username,password});
+      state.token=out.token;
+      localStorage.setItem('kardex_token',state.token);
+      state.user=out.user;
+      await loadBootstrap();
+      state.currentView='dashboard';
+      render();
+    }catch(e){ showMsg(e); }
+  };
+}
+
+async function loadBootstrap(){
+  const out=await runServer('getBootstrap',state.token);
+  state.bootstrap=out;
+  state.user=out.user;
+}
+
+function renderShell(){
+  document.getElementById('userLabel').textContent = state.user ? `${state.user.username} (${state.user.role})` : '';
+  const menu=document.getElementById('menu');
+  menu.classList.remove('hidden');
+  const canWrite=state.user && (state.user.role==='admin' || state.user.role==='operator');
+  const isAdmin=state.user && state.user.role==='admin';
+  menu.innerHTML='';
+
+  addMenuBtn(menu,'Dashboard',()=>{state.currentView='dashboard';render();});
+  if(canWrite) addMenuBtn(menu,'Movimientos',()=>{state.currentView='movements';render();});
+  if(isAdmin){
+    addMenuBtn(menu,'Items',()=>{state.currentView='items';render();});
+    addMenuBtn(menu,'Servicios',()=>{state.currentView='services';render();});
+    addMenuBtn(menu,'Auditoria',()=>{state.currentView='audit';render();});
+    addMenuBtn(menu,'Init hojas',async()=>{
+      try{ await runServer('initSchema',{token:state.token}); showMsg('Hojas inicializadas',true); await loadBootstrap(); }
+      catch(e){ showMsg(e); }
+    });
+  }
+  addMenuBtn(menu,'Salir',async()=>{
+    try{ await runServer('logout',state.token); }catch(_e){}
+    localStorage.removeItem('kardex_token');
+    state.token=''; state.user=null; state.bootstrap=null;
+    renderLogin();
+  });
+}
+
+function addMenuBtn(menu,label,cb){
+  const b=document.createElement('button'); b.textContent=label; b.onclick=cb; b.style.width='auto'; menu.appendChild(b);
+}
+
+async function renderDashboard(){
+  const app=document.getElementById('app');
+  const month=new Date().toISOString().slice(0,7);
+  app.innerHTML=`<section class="card"><h2>Stock acumulado diario</h2>
+    <div class="inline"><label>Mes</label><input id="month" type="month" value="${month}"/><button id="loadBtn">Cargar</button></div>
+    <div id="dashTable" class="table" style="margin-top:10px"></div>
+  </section>`;
+
+  document.getElementById('loadBtn').onclick=async()=>{ await loadDashboard(); };
+  await loadDashboard();
+}
+
+async function loadDashboard(){
+  try{
+    const month=document.getElementById('month').value;
+    const out=await runServer('getDashboard',{token:state.token,month});
+    state.dashboard=out;
+    const head=['<th>Codigo</th><th>Descripcion</th><th>Inicio</th>'];
+    out.days.forEach(d=>head.push(`<th>${d}</th>`));
+    head.push('<th>Final</th>');
+    const rows=out.rows.map(r=>{
+      const t=[`<td>${esc(r.item_code)}</td>`,`<td>${esc(r.item_name)}</td>`,`<td>${r.start_balance}</td>`];
+      r.day_values.forEach(v=>t.push(`<td>${v}</td>`));
+      t.push(`<td><b>${r.end_balance}</b></td>`);
+      return `<tr>${t.join('')}</tr>`;
+    }).join('');
+    document.getElementById('dashTable').innerHTML=`<table><thead><tr>${head.join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+  }catch(e){ showMsg(e); }
+}
+
+function renderMovements(){
+  const app=document.getElementById('app');
+  const items=(state.bootstrap && state.bootstrap.items)||[];
+  const services=(state.bootstrap && state.bootstrap.services)||[];
+  app.innerHTML=`
+  <section class="card">
+    <h2>Registrar movimiento</h2>
+    <div class="grid">
+      <div><label>Fecha</label><input id="m_date" type="date"/></div>
+      <div><label>Item</label><select id="m_item">${items.map(i=>`<option value="${escAttr(i.item_code)}">${esc(i.item_code)} - ${esc(i.item_name)}</option>`).join('')}</select></div>
+      <div><label>Servicio</label><select id="m_service">${services.map(s=>`<option value="${escAttr(s.service_name)}">${esc(s.service_name)}</option>`).join('')}</select></div>
+      <div><label>Tipo</label><select id="m_type"><option>OUT</option><option>IN</option></select></div>
+      <div><label>Cantidad</label><input id="m_qty" type="number" min="1"/></div>
+      <div><label>Ticket</label><input id="m_ticket" type="text"/></div>
+      <div style="grid-column:1/-1"><label>Notas</label><textarea id="m_notes"></textarea></div>
+      <button id="saveMove">Guardar</button>
+    </div>
+  </section>`;
+  document.getElementById('m_date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('saveMove').onclick=async()=>{
+    try{
+      await runServer('createMovement',{
+        token:state.token,
+        movement_date:document.getElementById('m_date').value,
+        item_code:document.getElementById('m_item').value,
+        service_name:document.getElementById('m_service').value,
+        move_type:document.getElementById('m_type').value,
+        quantity:Number(document.getElementById('m_qty').value||0),
+        ticket_no:document.getElementById('m_ticket').value,
+        notes:document.getElementById('m_notes').value
+      });
+      showMsg('Movimiento guardado',true);
+    }catch(e){ showMsg(e); }
+  };
+}
+
+function renderItems(){
+  const app=document.getElementById('app');
+  const items=(state.bootstrap && state.bootstrap.items)||[];
+  app.innerHTML=`
+  <section class="card"><h2>Items</h2>
+    <div class="grid">
+      <div><label>Codigo</label><input id="i_code" type="text"/></div>
+      <div><label>Nombre</label><input id="i_name" type="text"/></div>
+      <div><label>Stock inicial</label><input id="i_stock" type="number" value="0"/></div>
+      <button id="saveItem">Crear item</button>
+    </div>
+    <div class="table" style="margin-top:10px"><table><thead><tr><th>Codigo</th><th>Nombre</th><th>Stock</th><th>Activo</th></tr></thead><tbody>
+      ${items.map(i=>`<tr><td>${esc(i.item_code)}</td><td>${esc(i.item_name)}</td><td>${i.initial_stock}</td><td>${i.active}</td></tr>`).join('')}
+    </tbody></table></div>
+  </section>`;
+
+  document.getElementById('saveItem').onclick=async()=>{
+    try{
+      await runServer('createItem',{token:state.token,code:document.getElementById('i_code').value,name:document.getElementById('i_name').value,initial_stock:Number(document.getElementById('i_stock').value||0)});
+      showMsg('Item creado',true);
+      await loadBootstrap();
+      renderItems();
+    }catch(e){ showMsg(e); }
+  };
+}
+
+function renderServices(){
+  const app=document.getElementById('app');
+  const services=(state.bootstrap && state.bootstrap.services)||[];
+  app.innerHTML=`
+  <section class="card"><h2>Servicios</h2>
+    <div class="inline"><div><label>Nombre</label><input id="s_name" type="text"/></div><button id="saveService">Crear servicio</button></div>
+    <div class="table" style="margin-top:10px"><table><thead><tr><th>Servicio</th><th>Activo</th></tr></thead><tbody>
+      ${services.map(s=>`<tr><td>${esc(s.service_name)}</td><td>${s.active}</td></tr>`).join('')}
+    </tbody></table></div>
+  </section>`;
+
+  document.getElementById('saveService').onclick=async()=>{
+    try{
+      await runServer('createService',{token:state.token,service_name:document.getElementById('s_name').value});
+      showMsg('Servicio creado',true);
+      await loadBootstrap();
+      renderServices();
+    }catch(e){ showMsg(e); }
+  };
+}
+
+async function renderAudit(){
+  const app=document.getElementById('app');
+  app.innerHTML=`<section class="card"><h2>Auditoria</h2><div id="a_tbl" class="table"></div></section>`;
+  try{
+    const logs=await runServer('getAudit',{token:state.token});
+    document.getElementById('a_tbl').innerHTML=`<table><thead><tr><th>Fecha</th><th>Usuario</th><th>Accion</th><th>Entidad</th><th>ID</th><th>Detalle</th></tr></thead><tbody>${logs.map(l=>`<tr><td>${esc(l.created_at)}</td><td>${esc(l.username)}</td><td>${esc(l.action)}</td><td>${esc(l.entity)}</td><td>${esc(l.entity_id)}</td><td>${esc(l.details)}</td></tr>`).join('')}</tbody></table>`;
+  }catch(e){ showMsg(e); }
+}
+
+function esc(v){ return String(v==null?'':v).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m])); }
+function escAttr(v){ return esc(v); }
+
+(async function init(){
+  if(!state.token){ renderLogin(); return; }
+  try{
+    await loadBootstrap();
+    render();
+  }catch(_e){
+    localStorage.removeItem('kardex_token');
+    state.token='';
+    renderLogin();
+  }
+})();
+</script>
+</body>
+</html>

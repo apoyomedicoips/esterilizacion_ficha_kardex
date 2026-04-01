@@ -1,5 +1,24 @@
 ﻿# Esterilizacion Ficha Kardex (Web App)
 
+## Implementacion recomendada: Google Apps Script
+
+La version solicitada con Apps Script esta en:
+
+- `apps_script/`
+
+Guia directa:
+
+- [apps_script/README.md](apps_script/README.md)
+
+Resumen:
+
+1. Crear proyecto web app con `clasp`.
+2. Subir codigo de `apps_script/src`.
+3. Ejecutar `setupDefaultAdmin`.
+4. Desplegar como Web App.
+5. Inicializar hojas con boton `Init hojas`.
+
+---
 Aplicacion web segura para reemplazar planillas online en el proceso de kardex de esterilizacion.
 
 Repositorio: `https://github.com/apoyomedicoips/esterilizacion_ficha_kardex.git`
@@ -74,3 +93,4 @@ Si no defines `KARDEX_USERS_JSON`, usa:
 - password: `Cambiar123!`
 
 Cambiarlo inmediatamente en produccion.
+
