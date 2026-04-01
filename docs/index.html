@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kardex Esterilizacion</title>
+  <style>
+    :root { --bg:#0b2f35; --card:#0f4953; --text:#eaf6f8; --line:#1f6772; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background: radial-gradient(circle at top left, #12535f 0%, #0b2f35 55%, #08262b 100%);
+      color: var(--text);
+    }
+    .wrap { min-height: 100vh; display: flex; flex-direction: column; }
+    .top {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(8, 38, 43, 0.9);
+      backdrop-filter: blur(4px);
+    }
+    .title { margin: 0; font-size: 1rem; font-weight: 700; }
+    .sub { margin: 4px 0 0; opacity: 0.85; font-size: 0.88rem; }
+    .frame-wrap { flex: 1; padding: 10px; }
+    iframe {
+      width: 100%;
+      height: calc(100vh - 84px);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+    }
+    .fallback {
+      margin-top: 8px;
+      font-size: 0.85rem;
+    }
+    a { color: #b8f4ff; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <h1 class="title">Kardex Seguro - Esterilizacion</h1>
+      <p class="sub">Acceso oficial desde GitHub Pages</p>
+    </header>
+    <main class="frame-wrap">
+      <iframe
+        title="Kardex Seguro App"
+        src="https://script.google.com/macros/s/AKfycbzQQ_L3D87a0j7xrqYn0Lv3bB1m7WNtzMse0YkQqzZ_vLvVp-WBMH2rJLEGGyCvEb0O/exec"
+        loading="eager"
+        referrerpolicy="no-referrer"
+      ></iframe>
+      <div class="fallback">
+        Si no carga, abre directo:
+        <a href="https://script.google.com/macros/s/AKfycbzQQ_L3D87a0j7xrqYn0Lv3bB1m7WNtzMse0YkQqzZ_vLvVp-WBMH2rJLEGGyCvEb0O/exec" target="_blank" rel="noopener noreferrer">
+          Web App Apps Script
+        </a>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
