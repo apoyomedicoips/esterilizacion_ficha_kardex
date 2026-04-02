@@ -654,6 +654,7 @@ const state = {
   currentView: 'dashboard',
   movementType: 'OUT',
   charts: [],
+  closureRaw: null,
   semaforo: {
     rojo: Number(localStorage.getItem('kardex_sem_rojo') || 50),
     amarillo: Number(localStorage.getItem('kardex_sem_amarillo') || 150)
@@ -666,6 +667,7 @@ const state = {
 
 const VIEW_LABELS = {
   dashboard: 'Tablero',
+  closure: 'Cierre mensual',
   movements: 'Registrar movimiento',
   items: 'Catalogo de items',
   services: 'Catalogo de servicios',
@@ -710,6 +712,7 @@ function render(){
   if(!state.token){ renderLogin(); return; }
   renderShell();
   if(state.currentView==='dashboard') renderDashboard();
+  if(state.currentView==='closure') renderClosure();
   if(state.currentView==='movements') renderMovements();
   if(state.currentView==='items') renderItems();
   if(state.currentView==='services') renderServices();
@@ -775,6 +778,7 @@ function renderShell(){
   const isAdmin=state.user && state.user.role==='admin';
 
   addMenuBtn(menu,'Tablero','dashboard',()=>{state.currentView='dashboard';render();});
+  addMenuBtn(menu,'Cierre mensual','closure',()=>{state.currentView='closure';render();});
   if(canWrite) addMenuBtn(menu,'Registrar','movements',()=>{state.currentView='movements';render();});
   if(isAdmin){
     addMenuBtn(menu,'Items','items',()=>{state.currentView='items';render();});
@@ -987,7 +991,193 @@ async function renderDashboard(){
   await loadDashboard();
 }
 
+async function renderClosure(){
+  const app=document.getElementById('app');
+  const monthDefault=new Date().toISOString().slice(0,7);
+  app.innerHTML=`
+    <section class="card">
+      <h2>${VIEW_LABELS.closure}</h2>
+      <p class="help">Tabla oficial de cierre por item: stock inicial, entradas, salidas y saldo final a fecha de corte.</p>
+      <div class="inline">
+        <div>
+          <label>Mes</label>
+          <input id="c_month" type="month" value="${monthDefault}"/>
+        </div>
+        <div>
+          <label>Fecha de corte (dia del mes)</label>
+          <select id="c_cutoffDay"></select>
+        </div>
+        <button id="c_loadBtn">Actualizar cierre</button>
+      </div>
+      <div class="btn-row" style="margin-bottom:8px">
+        <button id="exportExcelBtn" style="background:#0f6780">Exportar Excel</button>
+        <button id="exportWordBtn" style="background:#7b5d12">Generar reporte Word</button>
+      </div>
+      <div id="closureHeader" class="note"></div>
+      <div id="closureTable" class="table"></div>
+    </section>`;
+
+  document.getElementById('c_cutoffDay').onchange=()=>{
+    state.cutoffDay = Number(document.getElementById('c_cutoffDay').value || 0);
+    localStorage.setItem('kardex_cutoff_day', String(state.cutoffDay || 0));
+    renderClosureTable();
+  };
+  document.getElementById('c_loadBtn').onclick=async()=>{ await loadClosureData(); };
+  document.getElementById('exportExcelBtn').onclick=()=>{ exportClosureExcel(); };
+  document.getElementById('exportWordBtn').onclick=()=>{ exportClosureWord(); };
+  await loadClosureData();
+}
+
 function pad2(n){ return String(Number(n||0)).padStart(2,'0'); }
+
+function parseCutoffLabelParts(label){
+  const s=String(label||'');
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return { year:'-', month:'-', day:'-' };
+  return { year:m[1], month:String(Number(m[2])), day:String(Number(m[3])) };
+}
+
+function getClosureData(raw){
+  if(!raw) return null;
+  const model=buildCutoffModel(raw);
+  const rows=((model && model.rows) || []).map(r=>({
+    item_code: r.item_code,
+    item_name: r.item_name,
+    stock_inicial: Number(r.start_balance||0),
+    entradas: Number(r.in_until||0),
+    salidas: Number(r.out_until||0),
+    saldo_final: Number(r.cutoff_balance||0)
+  }));
+  rows.sort((a,b)=>{
+    const an=Number(a.item_code), bn=Number(b.item_code);
+    const aNum=Number.isFinite(an) && String(a.item_code).trim()!=='';
+    const bNum=Number.isFinite(bn) && String(b.item_code).trim()!=='';
+    if(aNum && bNum) return an-bn;
+    if(aNum) return -1;
+    if(bNum) return 1;
+    return String(a.item_code).localeCompare(String(b.item_code));
+  });
+  const totals=rows.reduce((acc,r)=>{
+    acc.stock_inicial += r.stock_inicial;
+    acc.entradas += r.entradas;
+    acc.salidas += r.salidas;
+    acc.saldo_final += r.saldo_final;
+    return acc;
+  },{stock_inicial:0,entradas:0,salidas:0,saldo_final:0});
+  return { model, rows, totals };
+}
+
+async function loadClosureData(){
+  try{
+    const month=document.getElementById('c_month').value;
+    const out=await safeServer('getDashboard',{token:state.token,month});
+    state.closureRaw=out;
+    syncCutoffSelector(out.days||[], 'c_cutoffDay');
+    renderClosureTable();
+  }catch(e){ showMsg(e); }
+}
+
+function renderClosureTable(){
+  const data=getClosureData(state.closureRaw);
+  if(!data){
+    document.getElementById('closureTable').innerHTML='';
+    return;
+  }
+  const parts=parseCutoffLabelParts(data.model.cutoffLabel);
+  document.getElementById('closureHeader').innerHTML=`
+    <strong>HOSPITAL DE ESPECIALIDADES QUIRURGICAS - INGAVI</strong><br/>
+    AREA DE ESTERILIZACION · CIERRE DEL MES<br/>
+    MES: <strong>${parts.month}</strong> &nbsp; ANO: <strong>${parts.year}</strong> &nbsp; DIA: <strong>${parts.day}</strong>`;
+
+  document.getElementById('closureTable').innerHTML=`
+    <table>
+      <thead>
+        <tr>
+          <th>ITEM</th>
+          <th>STOCK INICIAL</th>
+          <th>ENTRADAS</th>
+          <th>SALIDAS</th>
+          <th>SALDO FINAL</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${data.rows.map(r=>`<tr>
+          <td><strong>${esc(r.item_code)}</strong></td>
+          <td>${fmt(r.stock_inicial)}</td>
+          <td>${fmt(r.entradas)}</td>
+          <td>${fmt(r.salidas)}</td>
+          <td><strong>${fmt(r.saldo_final)}</strong></td>
+        </tr>`).join('')}
+        <tr style="background:#eef5f7;font-weight:800">
+          <td>TOTAL</td>
+          <td>${fmt(data.totals.stock_inicial)}</td>
+          <td>${fmt(data.totals.entradas)}</td>
+          <td>${fmt(data.totals.salidas)}</td>
+          <td>${fmt(data.totals.saldo_final)}</td>
+        </tr>
+      </tbody>
+    </table>`;
+}
+
+function downloadBlob(filename, mimeType, content){
+  const blob=new Blob([content], {type:mimeType});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download=filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function exportClosureExcel(){
+  const data=getClosureData(state.closureRaw);
+  if(!data){ showMsg('No hay datos para exportar.'); return; }
+  const parts=parseCutoffLabelParts(data.model.cutoffLabel);
+  const tableRows=data.rows.map(r=>`
+    <tr>
+      <td>${esc(r.item_code)}</td>
+      <td>${r.stock_inicial}</td>
+      <td>${r.entradas}</td>
+      <td>${r.salidas}</td>
+      <td>${r.saldo_final}</td>
+    </tr>`).join('');
+  const html=`<html><head><meta charset="utf-8"></head><body>
+    <h3>CIERRE DEL MES - ESTERILIZACION</h3>
+    <p>Mes: ${parts.month} | Ano: ${parts.year} | Dia: ${parts.day}</p>
+    <table border="1" cellspacing="0" cellpadding="4">
+      <tr><th>ITEM</th><th>STOCK INICIAL</th><th>ENTRADAS</th><th>SALIDAS</th><th>SALDO FINAL</th></tr>
+      ${tableRows}
+      <tr>
+        <td><b>TOTAL</b></td>
+        <td><b>${data.totals.stock_inicial}</b></td>
+        <td><b>${data.totals.entradas}</b></td>
+        <td><b>${data.totals.salidas}</b></td>
+        <td><b>${data.totals.saldo_final}</b></td>
+      </tr>
+    </table>
+  </body></html>`;
+  downloadBlob(`Cierre_Kardex_${data.model.cutoffLabel}.xls`, 'application/vnd.ms-excel', html);
+}
+
+function exportClosureWord(){
+  const data=getClosureData(state.closureRaw);
+  if(!data){ showMsg('No hay datos para exportar.'); return; }
+  const parts=parseCutoffLabelParts(data.model.cutoffLabel);
+  const topCriticos=[...data.rows].sort((a,b)=>a.saldo_final-b.saldo_final).slice(0,5);
+  const wordHtml=`<html><head><meta charset="utf-8"></head><body>
+    <h2>REPORTE DE CIERRE MENSUAL - AREA DE ESTERILIZACION</h2>
+    <p><b>Mes:</b> ${parts.month} &nbsp; <b>Ano:</b> ${parts.year} &nbsp; <b>Dia:</b> ${parts.day}</p>
+    <p><b>Totales:</b> Stock inicial ${fmt(data.totals.stock_inicial)}, Entradas ${fmt(data.totals.entradas)}, Salidas ${fmt(data.totals.salidas)}, Saldo final ${fmt(data.totals.saldo_final)}.</p>
+    <p><b>Items con menor saldo final:</b> ${topCriticos.map(x=>`${x.item_code} (${fmt(x.saldo_final)})`).join(', ')}.</p>
+    <table border="1" cellspacing="0" cellpadding="4">
+      <tr><th>ITEM</th><th>STOCK INICIAL</th><th>ENTRADAS</th><th>SALIDAS</th><th>SALDO FINAL</th></tr>
+      ${data.rows.map(r=>`<tr><td>${esc(r.item_code)}</td><td>${fmt(r.stock_inicial)}</td><td>${fmt(r.entradas)}</td><td>${fmt(r.salidas)}</td><td>${fmt(r.saldo_final)}</td></tr>`).join('')}
+    </table>
+  </body></html>`;
+  downloadBlob(`Reporte_Cierre_${data.model.cutoffLabel}.doc`, 'application/msword', wordHtml);
+}
 
 function getFilteredDashboardOut(raw){
   if(!raw) return null;
@@ -998,8 +1188,8 @@ function getFilteredDashboardOut(raw){
   return Object.assign({}, raw, { rows: rows, month_movements: mm });
 }
 
-function syncCutoffSelector(days){
-  const sel=document.getElementById('cutoffDay');
+function syncCutoffSelector(days, targetId){
+  const sel=document.getElementById(targetId || 'cutoffDay');
   if(!sel || !days || !days.length) return;
   const maxDay=Math.max(...days.map(d=>Number(d||0)));
   let desired=Number(state.cutoffDay||0);
