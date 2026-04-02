@@ -7,7 +7,9 @@ const CONFIG = {
   SESSION_TTL_SECONDS: 60 * 60 * 8,
   SESSION_PREFIX: 'SESSION_',
   USERS_PROP_KEY: 'KARDEX_USERS_JSON',
-  PASSWORD_PEPPER_KEY: 'KARDEX_PASSWORD_PEPPER'
+  PASSWORD_PEPPER_KEY: 'KARDEX_PASSWORD_PEPPER',
+  WARMUP_TRIGGER_FN: 'warmupDashboardCachesJob',
+  WARMUP_TRIGGER_HOUR: 4
 };
 
 const SHEETS = {
@@ -53,6 +55,13 @@ function include(filename) {
 function getBootstrap(token) {
   ensureSchema_();
   const session = requireSession_(token, ['admin', 'operator', 'viewer']);
+  if (session.role === 'admin') {
+    try {
+      ensureWarmupTrigger_();
+    } catch (_e) {
+      // Do not block bootstrap if trigger setup fails.
+    }
+  }
   return {
     user: { username: session.username, role: session.role },
     services: listServices_().filter((s) => s.active),
@@ -112,11 +121,16 @@ function getDashboard(payload) {
   requireSession_(token, ['admin', 'operator', 'viewer']);
 
   const month = String((payload && payload.month) || '').trim();
+  return getDashboardInternal_(month);
+}
+
+function getDashboardInternal_(month) {
   const parsed = parseMonth_(month);
   const year = parsed.year;
   const mon = parsed.month;
+  const fingerprints = getMovementsFingerprint_() + '_' + getItemsFingerprint_();
   const monthKey = Utilities.formatDate(new Date(year, mon - 1, 1), Session.getScriptTimeZone(), 'yyyy-MM');
-  const cacheKey = 'DASH_V4_' + monthKey + '_' + getMovementsFingerprint_();
+  const cacheKey = 'DASH_V5_' + monthKey + '_' + fingerprints;
   const scriptCache = CacheService.getScriptCache();
   const cached = scriptCache.get(cacheKey);
   if (cached) return JSON.parse(cached);
@@ -239,7 +253,7 @@ function getMonthlyClosure(payload) {
   const monthInput = String((payload && payload.month) || '').trim();
   const parsedInput = parseMonth_(monthInput);
   const monthKeyInput = Utilities.formatDate(new Date(parsedInput.year, parsedInput.month - 1, 1), Session.getScriptTimeZone(), 'yyyy-MM');
-  const fingerprint = getMovementsFingerprint_();
+  const fingerprint = getMovementsFingerprint_() + '_' + getItemsFingerprint_();
   const cacheKey = 'CLOSURE_V3_' + monthKeyInput + '_' + fingerprint;
   const cached = CacheService.getScriptCache().get(cacheKey);
   if (cached) return JSON.parse(cached);
@@ -424,8 +438,66 @@ function getAudit(payload) {
 function initSchema(payload) {
   const session = requireSession_(payload && payload.token, ['admin']);
   ensureSchema_();
+  ensureWarmupTrigger_();
   audit_('INIT', 'Spreadsheet', CONFIG.SPREADSHEET_ID, 'Schema initialized', session.username);
   return { ok: true };
+}
+
+function installWarmupScheduler(payload) {
+  const session = requireSession_(payload && payload.token, ['admin']);
+  ensureSchema_();
+  const triggerInfo = ensureWarmupTrigger_();
+  const warmed = warmupDashboardCachesJob();
+  audit_('CONFIG', 'WarmupTrigger', triggerInfo.triggerId || '', `installed by ${session.username}`, session.username);
+  return {
+    ok: true,
+    trigger: triggerInfo,
+    warmup: warmed
+  };
+}
+
+function warmupDashboardCachesJob() {
+  ensureSchema_();
+  const now = new Date();
+  const tz = Session.getScriptTimeZone();
+  const curr = Utilities.formatDate(new Date(now.getFullYear(), now.getMonth(), 1), tz, 'yyyy-MM');
+  const prev = Utilities.formatDate(new Date(now.getFullYear(), now.getMonth() - 1, 1), tz, 'yyyy-MM');
+  const next = Utilities.formatDate(new Date(now.getFullYear(), now.getMonth() + 1, 1), tz, 'yyyy-MM');
+
+  const months = [prev, curr, next];
+  const warmed = [];
+  for (let i = 0; i < months.length; i++) {
+    const mk = months[i];
+    try {
+      const out = getDashboardInternal_(mk);
+      warmed.push({ month: mk, ok: true, rows: (out.rows || []).length, movements: (out.month_movements || []).length });
+    } catch (e) {
+      warmed.push({ month: mk, ok: false, error: String(e && e.message ? e.message : e) });
+    }
+  }
+  return {
+    ok: true,
+    at: new Date().toISOString(),
+    warmed: warmed
+  };
+}
+
+function ensureWarmupTrigger_() {
+  const fn = CONFIG.WARMUP_TRIGGER_FN;
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === fn) {
+      return { exists: true, triggerId: triggers[i].getUniqueId ? triggers[i].getUniqueId() : '' };
+    }
+  }
+
+  const created = ScriptApp.newTrigger(fn)
+    .timeBased()
+    .atHour(Number(CONFIG.WARMUP_TRIGGER_HOUR || 4))
+    .everyDays(1)
+    .create();
+
+  return { exists: false, triggerId: created.getUniqueId ? created.getUniqueId() : '' };
 }
 
 function setupDefaultAdmin() {
@@ -617,6 +689,14 @@ function getMovementsFingerprint_() {
   if (lastRow < 2) return '0';
   const row = ws.getRange(lastRow, 1, 1, SHEETS.MOVEMENTS.headers.length).getValues()[0];
   return String(lastRow) + '|' + String(row[0] || '') + '|' + String(row[1] || '') + '|' + String(row[9] || '');
+}
+
+function getItemsFingerprint_() {
+  const ws = getSheet_(SHEETS.ITEMS.name, SHEETS.ITEMS.headers);
+  const lastRow = ws.getLastRow();
+  if (lastRow < 2) return '0';
+  const row = ws.getRange(lastRow, 1, 1, SHEETS.ITEMS.headers.length).getValues()[0];
+  return String(lastRow) + '|' + String(row[0] || '') + '|' + String(row[1] || '') + '|' + String(row[4] || '');
 }
 
 function fillZeros_(n) {
