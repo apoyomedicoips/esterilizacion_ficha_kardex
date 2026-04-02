@@ -179,6 +179,14 @@
     }
 
     .btn-row button { width: auto; }
+    .inline {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(180px, 1fr));
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 8px;
+    }
+    .inline button { width: auto; min-width: 180px; }
 
     .summary {
       display: grid;
@@ -333,6 +341,37 @@
       padding: 10px;
       background: linear-gradient(160deg,#ffffff 0%,#f7fbfd 100%);
     }
+    .manager-box {
+      margin-top: 12px;
+      border: 1px solid #d2e2e7;
+      border-radius: 12px;
+      padding: 10px;
+      background: linear-gradient(160deg,#ffffff 0%,#f7fbfd 100%);
+    }
+    .manager-kpis {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(150px, 1fr));
+      gap: 8px;
+      margin: 8px 0 10px;
+    }
+    .manager-kpi {
+      border: 1px solid #d4e3e8;
+      border-radius: 10px;
+      padding: 9px 10px;
+      background: #fbfeff;
+    }
+    .manager-kpi p { margin: 0; }
+    .manager-kpi .label {
+      color: #3e616b;
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+    .manager-kpi .value {
+      margin-top: 3px;
+      font-size: 1.08rem;
+      font-weight: 800;
+      color: #0f4f5c;
+    }
 
     .grid {
       display: grid;
@@ -456,11 +495,13 @@
     .small { font-size: 0.83rem; color: var(--muted); }
 
     @media (max-width: 980px) {
+      .inline { grid-template-columns: 1fr; }
       .grid { grid-template-columns: 1fr; }
       .move-type { grid-template-columns: 1fr; }
       .summary { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
       .steps { grid-template-columns: 1fr; }
       .analytics-grid { grid-template-columns: 1fr; }
+      .manager-kpis { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
       main { padding: 12px; }
     }
   </style>
@@ -493,6 +534,7 @@ const state = {
   dashboard: null,
   dashboardRaw: null,
   selectedItems: null,
+  cutoffDay: Number(localStorage.getItem('kardex_cutoff_day') || 0),
   currentView: 'dashboard',
   movementType: 'OUT',
   charts: [],
@@ -665,6 +707,10 @@ async function renderDashboard(){
           <label>Mes</label>
           <input id="month" type="month" value="${monthDefault}"/>
         </div>
+        <div>
+          <label>Fecha de corte (dia del mes)</label>
+          <select id="cutoffDay"></select>
+        </div>
         <button id="loadBtn">Actualizar tablero</button>
       </div>
 
@@ -679,11 +725,11 @@ async function renderDashboard(){
 
       <div class="analytics-grid" id="analyticsGrid">
         <div class="chart-card">
-          <p class="chart-title">Distribucion del stock final por item</p>
+          <p class="chart-title">Distribucion del stock a fecha de corte</p>
           <div class="chart-wrap"><canvas id="chartPie"></canvas></div>
         </div>
         <div class="chart-card">
-          <p class="chart-title">Items con menor stock final</p>
+          <p class="chart-title">Items con menor stock a fecha de corte</p>
           <div class="chart-wrap"><canvas id="chartLow"></canvas></div>
         </div>
         <div class="chart-card">
@@ -691,14 +737,30 @@ async function renderDashboard(){
           <div class="chart-wrap"><canvas id="chartSeries"></canvas></div>
         </div>
         <div class="chart-card">
-          <p class="chart-title">Variacion mensual por item (final - inicio)</p>
+          <p class="chart-title">Variacion al corte por item (corte - inicio)</p>
           <div class="chart-wrap"><canvas id="chartVar"></canvas></div>
         </div>
+        <div class="chart-card">
+          <p class="chart-title">Consumo acumulado por servicio (Top 10)</p>
+          <div class="chart-wrap"><canvas id="chartService"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <p class="chart-title">Flujo acumulado al corte (entradas vs salidas)</p>
+          <div class="chart-wrap"><canvas id="chartFlow"></canvas></div>
+        </div>
+      </div>
+
+      <div class="manager-box">
+        <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">Control gerencial de abastecimiento</h3>
+        <p class="help" style="margin-bottom:8px">Resumen para jefatura: stock al corte, ritmo de consumo y cobertura estimada por item.</p>
+        <div id="managerKpis" class="manager-kpis"></div>
+        <div id="managerAlerts" class="insights"></div>
+        <div id="managerTable" class="table"></div>
       </div>
 
       <div class="semaforo-box">
         <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">Semaforo clinico de reposicion</h3>
-        <p class="help" style="margin-bottom:8px">Clasifica cada item por stock final para priorizar reposicion (rojo primero).</p>
+        <p class="help" style="margin-bottom:8px">Clasifica cada item por stock a fecha de corte para priorizar reposicion (rojo primero).</p>
         <div class="semaforo-head">
           <div class="field">
             <label style="margin-top:0">Umbral rojo (critico)</label>
@@ -735,7 +797,10 @@ async function renderDashboard(){
         <div id="semAreaTable" class="table"></div>
       </div>
 
-      <div id="dashTable" class="table" style="margin-top:12px"></div>
+      <details style="margin-top:12px">
+        <summary style="cursor:pointer;font-weight:800;color:#184d59">Ver detalle diario completo por item</summary>
+        <div id="dashTable" class="table" style="margin-top:10px"></div>
+      </details>
     </section>`;
 
   document.getElementById('semRojo').value = state.semaforo.rojo;
@@ -750,7 +815,7 @@ async function renderDashboard(){
     state.semaforo.amarillo=amarillo;
     localStorage.setItem('kardex_sem_rojo',String(rojo));
     localStorage.setItem('kardex_sem_amarillo',String(amarillo));
-    if(state.dashboard) renderSemaforo(state.dashboard);
+    if(state.dashboardRaw) renderDashboardPanels();
   };
   document.getElementById('semReset').onclick=()=>{
     state.semaforo={rojo:50, amarillo:150};
@@ -758,7 +823,7 @@ async function renderDashboard(){
     document.getElementById('semAmarillo').value=150;
     localStorage.setItem('kardex_sem_rojo','50');
     localStorage.setItem('kardex_sem_amarillo','150');
-    if(state.dashboard) renderSemaforo(state.dashboard);
+    if(state.dashboardRaw) renderDashboardPanels();
   };
   document.getElementById('semAreaApply').onclick=()=>{
     const y=Math.max(0,Number(document.getElementById('semAreaAmarillo').value||0));
@@ -781,28 +846,20 @@ async function renderDashboard(){
     state.selectedItems=null;
     if(state.dashboardRaw) renderDashboardPanels();
   };
+  document.getElementById('cutoffDay').onchange=(e)=>{
+    state.cutoffDay = Number(e.target.value || 0);
+    localStorage.setItem('kardex_cutoff_day', String(state.cutoffDay || 0));
+    if(state.dashboardRaw){
+      renderLassoSelector(state.dashboardRaw);
+      renderDashboardPanels();
+    }
+  };
 
   document.getElementById('loadBtn').onclick=async()=>{ await loadDashboard(); };
   await loadDashboard();
 }
 
-function calcKpis(out){
-  let totalFinal=0;
-  let totalInicio=0;
-  let bajo=0;
-  out.rows.forEach(r=>{
-    totalFinal += Number(r.end_balance||0);
-    totalInicio += Number(r.start_balance||0);
-    if(Number(r.end_balance||0) <= 0) bajo++;
-  });
-  return {
-    items: out.rows.length,
-    inicio: totalInicio,
-    final: totalFinal,
-    criticos: bajo,
-    variacion: totalFinal-totalInicio
-  };
-}
+function pad2(n){ return String(Number(n||0)).padStart(2,'0'); }
 
 function getFilteredDashboardOut(raw){
   if(!raw) return null;
@@ -813,12 +870,146 @@ function getFilteredDashboardOut(raw){
   return Object.assign({}, raw, { rows: rows, month_movements: mm });
 }
 
+function syncCutoffSelector(days){
+  const sel=document.getElementById('cutoffDay');
+  if(!sel || !days || !days.length) return;
+  const maxDay=Math.max(...days.map(d=>Number(d||0)));
+  let desired=Number(state.cutoffDay||0);
+  if(!desired || desired<1 || desired>maxDay) desired=maxDay;
+  state.cutoffDay=desired;
+  localStorage.setItem('kardex_cutoff_day', String(desired));
+  sel.innerHTML=days.map(d=>{
+    const n=Number(d||0);
+    const tag = n===maxDay ? ' (fin de mes)' : '';
+    return `<option value="${n}">Dia ${n}${tag}</option>`;
+  }).join('');
+  sel.value=String(desired);
+}
+
+function buildCutoffModel(out){
+  const rows=(out && out.rows) || [];
+  const days=(out && out.days) || [];
+  const mm=(out && out.month_movements) || [];
+  if(!days.length){
+    return { cutoffDay: 0, cutoffIndex: 0, rows: [], serviceRows: [], totalByDay: [], cumulativeIn: [], cumulativeOut: [] };
+  }
+
+  const maxDay=Math.max(...days.map(d=>Number(d||0)));
+  let cutoffDay=Number(state.cutoffDay||maxDay);
+  if(!cutoffDay || cutoffDay<1 || cutoffDay>maxDay) cutoffDay=maxDay;
+  const cutoffIndex=Math.max(0, cutoffDay-1);
+  const itemAgg={};
+  const serviceAgg={};
+  let totalOutUntil=0;
+  let totalInUntil=0;
+
+  mm.forEach(m=>{
+    const day=Number(m.day||0);
+    if(!day || day>cutoffDay) return;
+    const code=String(m.item_code||'');
+    const svc=String(m.service_name||'').trim().toUpperCase();
+    const qty=Number(m.quantity||0);
+    const type=String(m.move_type||'').toUpperCase();
+    if(!code || !qty) return;
+    if(!itemAgg[code]) itemAgg[code]={in_qty:0,out_qty:0};
+    if(type==='IN'){
+      itemAgg[code].in_qty += qty;
+      totalInUntil += qty;
+    }else if(type==='OUT'){
+      itemAgg[code].out_qty += qty;
+      totalOutUntil += qty;
+      if(svc){
+        if(!serviceAgg[svc]) serviceAgg[svc]=0;
+        serviceAgg[svc] += qty;
+      }
+    }
+  });
+
+  const cutoffRows=rows.map(r=>{
+    const code=String(r.item_code||'');
+    const start=Number(r.start_balance||0);
+    const end=Number(r.end_balance||0);
+    const cut=Number(r.day_values?.[cutoffIndex] ?? end);
+    const agg=itemAgg[code] || {in_qty:0,out_qty:0};
+    const dailyOutRate = cutoffDay>0 ? agg.out_qty / cutoffDay : 0;
+    let coverageDays = null;
+    if(dailyOutRate > 0) coverageDays = cut / dailyOutRate;
+    let coverageLevel='green';
+    let coverageText='Estable';
+    if(cut<=0){
+      coverageLevel='red'; coverageText='Sin stock';
+    }else if(coverageDays != null && coverageDays < 3){
+      coverageLevel='red'; coverageText='Critico (<3 dias)';
+    }else if(coverageDays != null && coverageDays < 7){
+      coverageLevel='yellow'; coverageText='Alerta (3-7 dias)';
+    }else if(coverageDays == null){
+      coverageText='Sin consumo';
+    }
+    return {
+      item_code: code,
+      item_name: r.item_name,
+      start_balance: start,
+      end_balance: end,
+      cutoff_balance: cut,
+      cutoff_diff: cut-start,
+      in_until: agg.in_qty,
+      out_until: agg.out_qty,
+      daily_out_rate: dailyOutRate,
+      coverage_days: coverageDays,
+      coverage_level: coverageLevel,
+      coverage_text: coverageText,
+      day_values: r.day_values || []
+    };
+  });
+
+  const serviceRows = Object.keys(serviceAgg)
+    .map(name=>({ service_name:name, out_qty:Number(serviceAgg[name]||0) }))
+    .sort((a,b)=>b.out_qty-a.out_qty);
+
+  const totalByDay=days.map((_,idx)=>cutoffRows.reduce((acc,r)=>acc+Number(r.day_values[idx]||0),0));
+  const dayIn={};
+  const dayOut={};
+  mm.forEach(m=>{
+    const d=Number(m.day||0);
+    if(!d) return;
+    const q=Number(m.quantity||0);
+    const t=String(m.move_type||'').toUpperCase();
+    if(t==='IN') dayIn[d]=(dayIn[d]||0)+q;
+    if(t==='OUT') dayOut[d]=(dayOut[d]||0)+q;
+  });
+  const cumulativeIn=[];
+  const cumulativeOut=[];
+  let runIn=0;
+  let runOut=0;
+  for(let d=1; d<=days.length; d++){
+    runIn += Number(dayIn[d]||0);
+    runOut += Number(dayOut[d]||0);
+    cumulativeIn.push(d<=cutoffDay ? runIn : null);
+    cumulativeOut.push(d<=cutoffDay ? runOut : null);
+  }
+
+  return {
+    cutoffDay,
+    cutoffIndex,
+    cutoffLabel: `${out.month}-${pad2(cutoffDay)}`,
+    rows: cutoffRows,
+    serviceRows,
+    totalByDay,
+    cumulativeIn,
+    cumulativeOut,
+    totalOutUntil,
+    totalInUntil,
+    monthDays: days.length
+  };
+}
+
 function renderLassoSelector(raw){
   const container=document.getElementById('lassoPlot');
   if(!container || typeof Plotly==='undefined' || !raw) return;
-  const rows=raw.rows||[];
-  const x=rows.map(r=>Number(r.end_balance||0));
-  const y=rows.map(r=>Number(r.end_balance||0)-Number(r.start_balance||0));
+  const model=buildCutoffModel(raw);
+  const rows=model.rows||[];
+  const x=rows.map(r=>Number(r.cutoff_balance||0));
+  const y=rows.map(r=>Number(r.cutoff_diff||0));
   const labels=rows.map(r=>String(r.item_code));
   const selected=state.selectedItems || new Set();
   const colors=labels.map(l=>selected.has(l)?'#e66f51':'#1c89a0');
@@ -827,15 +1018,15 @@ function renderLassoSelector(raw){
     x:x, y:y, text:labels, mode:'markers+text', type:'scatter',
     textposition:'top center',
     marker:{ size:10, color:colors, line:{color:'#ffffff', width:1} },
-    hovertemplate:'Item %{text}<br>Stock final: %{x}<br>Variacion: %{y}<extra></extra>'
+    hovertemplate:'Item %{text}<br>Stock corte: %{x}<br>Variacion corte: %{y}<extra></extra>'
   };
   const layout={
     margin:{l:45,r:15,t:10,b:40},
     paper_bgcolor:'rgba(0,0,0,0)',
     plot_bgcolor:'#ffffff',
     dragmode:'lasso',
-    xaxis:{title:'Stock final'},
-    yaxis:{title:'Variacion mensual'}
+    xaxis:{title:'Stock a fecha de corte'},
+    yaxis:{title:'Variacion al corte'}
   };
   Plotly.react(container,[trace],layout,{displayModeBar:true,responsive:true,modeBarButtonsToRemove:['autoScale2d','lasso2d','select2d'],displaylogo:false});
   container.on('plotly_selected',(ev)=>{
@@ -861,36 +1052,39 @@ function colorRamp(i){
   return palette[i%palette.length];
 }
 
-function buildDashboardAnalytics(out){
-  const rows=out.rows||[];
-  const days=out.days||[];
-  const totalByDay=days.map((_,idx)=> rows.reduce((acc,r)=>acc+Number(r.day_values?.[idx]||0),0));
-  const low=[...rows].sort((a,b)=>Number(a.end_balance||0)-Number(b.end_balance||0)).slice(0,10);
+function buildDashboardAnalytics(out, model){
+  const rows=(model && model.rows) || [];
+  const days=(out && out.days) || [];
+  const totalByDay=(model && model.totalByDay) || [];
+  const low=[...rows].sort((a,b)=>Number(a.cutoff_balance||0)-Number(b.cutoff_balance||0)).slice(0,10);
   const varRows=[...rows].map(r=>({
     code:r.item_code,
-    diff:Number(r.end_balance||0)-Number(r.start_balance||0)
+    diff:Number(r.cutoff_diff||0)
   })).sort((a,b)=>a.diff-b.diff);
-  const pieBase=[...rows].sort((a,b)=>Number(b.end_balance||0)-Number(a.end_balance||0));
+  const pieBase=[...rows].sort((a,b)=>Number(b.cutoff_balance||0)-Number(a.cutoff_balance||0));
   const topPie=pieBase.slice(0,8);
-  const others=pieBase.slice(8).reduce((a,r)=>a+Number(r.end_balance||0),0);
+  const others=pieBase.slice(8).reduce((a,r)=>a+Number(r.cutoff_balance||0),0);
   const pieLabels=topPie.map(r=>r.item_code);
-  const pieValues=topPie.map(r=>Number(r.end_balance||0));
+  const pieValues=topPie.map(r=>Number(r.cutoff_balance||0));
   if(others>0){ pieLabels.push('OTROS'); pieValues.push(others); }
-  return {totalByDay,low,varRows,pieLabels,pieValues};
+  const serviceTop=((model && model.serviceRows) || []).slice(0,10);
+  return {days,totalByDay,low,varRows,pieLabels,pieValues,serviceTop};
 }
 
-function renderDashboardCharts(out){
+function renderDashboardCharts(out, model){
   destroyDashboardCharts();
   if(typeof Chart==='undefined') return;
 
-  const a=buildDashboardAnalytics(out);
+  const a=buildDashboardAnalytics(out, model);
   const days=(out.days||[]).map(d=>String(d));
 
   const pieCtx=document.getElementById('chartPie');
   const lowCtx=document.getElementById('chartLow');
   const seriesCtx=document.getElementById('chartSeries');
   const varCtx=document.getElementById('chartVar');
-  if(!pieCtx||!lowCtx||!seriesCtx||!varCtx) return;
+  const serviceCtx=document.getElementById('chartService');
+  const flowCtx=document.getElementById('chartFlow');
+  if(!pieCtx||!lowCtx||!seriesCtx||!varCtx||!serviceCtx||!flowCtx) return;
 
   state.charts.push(new Chart(pieCtx,{
     type:'pie',
@@ -906,8 +1100,8 @@ function renderDashboardCharts(out){
     data:{
       labels:a.low.map(r=>r.item_code),
       datasets:[{
-        label:'Stock final',
-        data:a.low.map(r=>Number(r.end_balance||0)),
+        label:'Stock corte',
+        data:a.low.map(r=>Number(r.cutoff_balance||0)),
         backgroundColor:a.low.map((_,i)=> i<3 ? '#e66f51' : '#2c9bb0')
       }]
     },
@@ -953,6 +1147,50 @@ function renderDashboardCharts(out){
       scales:{ x:{ ticks:{ maxRotation:0,minRotation:0, autoSkip:true } }, y:{ beginAtZero:true } }
     }
   }));
+
+  state.charts.push(new Chart(serviceCtx,{
+    type:'bar',
+    data:{
+      labels:a.serviceTop.map(r=>r.service_name),
+      datasets:[{
+        label:'Salidas acumuladas',
+        data:a.serviceTop.map(r=>Number(r.out_qty||0)),
+        backgroundColor:a.serviceTop.map((_,i)=>colorRamp(i+2))
+      }]
+    },
+    options:{
+      indexAxis:'y',
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display:false } },
+      scales:{ x:{ beginAtZero:true } }
+    }
+  }));
+
+  state.charts.push(new Chart(flowCtx,{
+    type:'line',
+    data:{
+      labels:days,
+      datasets:[
+        {
+          label:'Entradas acumuladas',
+          data:(model && model.cumulativeIn) || [],
+          borderColor:'#2f9e70',
+          backgroundColor:'rgba(47,158,112,0.1)',
+          tension:.22,
+          pointRadius:2
+        },
+        {
+          label:'Salidas acumuladas',
+          data:(model && model.cumulativeOut) || [],
+          borderColor:'#d9654b',
+          backgroundColor:'rgba(217,101,75,0.1)',
+          tension:.22,
+          pointRadius:2
+        }
+      ]
+    },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } }
+  }));
 }
 
 function semaforoLevel(v, rojo, amarillo){
@@ -968,34 +1206,66 @@ function semaforoLabel(level){
   return 'Verde';
 }
 
-function renderSemaforo(out){
+function calcKpis(out, model){
+  const rows=(model && model.rows) || [];
+  let totalInicio=0;
+  let stockCorte=0;
+  let criticos=0;
+  rows.forEach(r=>{
+    totalInicio += Number(r.start_balance||0);
+    stockCorte += Number(r.cutoff_balance||0);
+    if(Number(r.cutoff_balance||0) <= 0) criticos++;
+  });
+  const cutoffDay = Number((model && model.cutoffDay) || 1);
+  const monthDays = Number((model && model.monthDays) || cutoffDay);
+  const consumoAcum = Number((model && model.totalOutUntil) || 0);
+  const runRate = cutoffDay>0 ? consumoAcum / cutoffDay : 0;
+  const consumoProyectado = runRate * monthDays;
+  const stockProyectado = stockCorte - runRate * Math.max(0, monthDays-cutoffDay);
+  const coberturaCritica = rows.filter(r=>r.coverage_level==='red').length;
+  return {
+    items: rows.length,
+    inicio: totalInicio,
+    corte: stockCorte,
+    criticos,
+    variacion: stockCorte-totalInicio,
+    consumoAcum,
+    runRate,
+    consumoProyectado,
+    stockProyectado,
+    coberturaCritica
+  };
+}
+
+function renderSemaforo(model){
   const rojo=Number(state.semaforo.rojo||0);
   const amarillo=Number(state.semaforo.amarillo||0);
-  const rows=(out.rows||[]).map(r=>{
-    const end=Number(r.end_balance||0);
+  const rows=((model && model.rows) || []).map(r=>{
+    const cut=Number(r.cutoff_balance||0);
     const start=Number(r.start_balance||0);
-    const diff=end-start;
-    const level=semaforoLevel(end,rojo,amarillo);
-    return { code:r.item_code, name:r.item_name, end, start, diff, level };
+    const diff=Number(r.cutoff_diff||0);
+    const level=semaforoLevel(cut,rojo,amarillo);
+    return { code:r.item_code, name:r.item_name, cut, start, diff, level };
   });
 
   const order={'red':0,'yellow':1,'green':2};
-  rows.sort((a,b)=> order[a.level]-order[b.level] || a.end-b.end || String(a.code).localeCompare(String(b.code)));
+  rows.sort((a,b)=> order[a.level]-order[b.level] || a.cut-b.cut || String(a.code).localeCompare(String(b.code)));
 
   const countRed=rows.filter(r=>r.level==='red').length;
   const countYellow=rows.filter(r=>r.level==='yellow').length;
   const countGreen=rows.filter(r=>r.level==='green').length;
-  const avgEnd=rows.length ? rows.reduce((a,r)=>a+r.end,0)/rows.length : 0;
+  const avgEnd=rows.length ? rows.reduce((a,r)=>a+r.cut,0)/rows.length : 0;
 
   document.getElementById('semKpis').innerHTML=`
     <div class="traffic red">Rojo: ${countRed}</div>
     <div class="traffic yellow">Amarillo: ${countYellow}</div>
     <div class="traffic green">Verde: ${countGreen}</div>`;
 
-  const criticalTop=rows.filter(r=>r.level==='red').slice(0,5).map(r=>`${r.code} (${fmt(r.end)})`);
+  const criticalTop=rows.filter(r=>r.level==='red').slice(0,5).map(r=>`${r.code} (${fmt(r.cut)})`);
   document.getElementById('semPills').innerHTML=`
     <span class="pill">Umbrales: rojo ≤ ${fmt(rojo)} | amarillo ≤ ${fmt(amarillo)}</span>
-    <span class="pill">Stock final promedio: ${fmt(Math.round(avgEnd))}</span>
+    <span class="pill">Fecha corte: ${(model && model.cutoffLabel) || '-'}</span>
+    <span class="pill">Stock corte promedio: ${fmt(Math.round(avgEnd))}</span>
     ${criticalTop.length?`<span class="pill" style="border-color:#efb9b3;background:#ffeceb;color:#902f27">Criticos: ${criticalTop.join(', ')}</span>`:''}`;
 
   document.getElementById('semTable').innerHTML=`
@@ -1005,8 +1275,8 @@ function renderSemaforo(out){
           <th>Prioridad</th>
           <th>Item</th>
           <th>Descripcion</th>
-          <th>Saldo final</th>
-          <th>Variacion mes</th>
+          <th>Saldo corte</th>
+          <th>Variacion al corte</th>
           <th>Estado</th>
         </tr>
       </thead>
@@ -1016,7 +1286,7 @@ function renderSemaforo(out){
             <td>${i+1}</td>
             <td><strong>${esc(r.code)}</strong></td>
             <td>${esc(r.name)}</td>
-            <td>${fmt(r.end)}</td>
+            <td>${fmt(r.cut)}</td>
             <td>${fmt(r.diff)}</td>
             <td><span class="badge ${r.level}">${semaforoLabel(r.level)}</span></td>
           </tr>`).join('')}
@@ -1024,24 +1294,14 @@ function renderSemaforo(out){
     </table>`;
 }
 
-function renderSemaforoArea(out){
-  const mm=(out && out.month_movements)||[];
-  const agg={};
-  mm.forEach(m=>{
-    const svc=String(m.service_name||'').trim().toUpperCase();
-    if(!svc) return;
-    if(!agg[svc]) agg[svc]={in_qty:0,out_qty:0};
-    const q=Number(m.quantity||0);
-    if(String(m.move_type).toUpperCase()==='IN') agg[svc].in_qty+=q;
-    if(String(m.move_type).toUpperCase()==='OUT') agg[svc].out_qty+=q;
-  });
+function renderSemaforoArea(model){
   const y=Number(state.semaforoArea.amarillo||0);
   const r=Number(state.semaforoArea.rojo||0);
-  const rows=Object.keys(agg).map(s=>{
-    const outq=Number(agg[s].out_qty||0), inq=Number(agg[s].in_qty||0);
+  const rows=((model && model.serviceRows) || []).map(s=>{
+    const outq=Number(s.out_qty||0);
     let level='green';
     if(outq>=r) level='red'; else if(outq>=y) level='yellow';
-    return {service:s,in_qty:inq,out_qty:outq,net:inq-outq,level};
+    return {service:s.service_name,out_qty:outq,level};
   }).sort((a,b)=>({'red':0,'yellow':1,'green':2}[a.level]-({'red':0,'yellow':1,'green':2}[b.level]) || b.out_qty-a.out_qty));
 
   const cr=rows.filter(x=>x.level==='red').length;
@@ -1058,16 +1318,78 @@ function renderSemaforoArea(out){
 
   table.innerHTML=`
     <table>
-      <thead><tr><th>Prioridad</th><th>Area/Servicio</th><th>Salidas mes</th><th>Entradas mes</th><th>Neto</th><th>Estado</th></tr></thead>
+      <thead><tr><th>Prioridad</th><th>Area/Servicio</th><th>Salidas acumuladas</th><th>Estado</th></tr></thead>
       <tbody>
       ${rows.map((r0,i)=>`<tr>
         <td>${i+1}</td>
         <td>${esc(r0.service)}</td>
         <td>${fmt(r0.out_qty)}</td>
-        <td>${fmt(r0.in_qty)}</td>
-        <td>${fmt(r0.net)}</td>
         <td><span class="badge ${r0.level}">${semaforoLabel(r0.level)}</span></td>
       </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function renderManagerPanel(out, model, k){
+  const rows=(model && model.rows) || [];
+  const cutoffText=(model && model.cutoffLabel) || '-';
+  const redCount=rows.filter(r=>r.coverage_level==='red').length;
+  const yellowCount=rows.filter(r=>r.coverage_level==='yellow').length;
+  const projectedClass = k.stockProyectado < 0 ? 'alert' : 'good';
+  const projectedText = k.stockProyectado < 0 ? 'Proyeccion de quiebre de stock' : 'Proyeccion de cierre estable';
+
+  document.getElementById('managerKpis').innerHTML=`
+    <div class="manager-kpi"><p class="label">Stock total al corte</p><p class="value">${fmt(k.corte)}</p></div>
+    <div class="manager-kpi"><p class="label">Consumo acumulado</p><p class="value">${fmt(k.consumoAcum)}</p></div>
+    <div class="manager-kpi"><p class="label">Ritmo diario (run-rate)</p><p class="value">${fmt(Math.round(k.runRate))}</p></div>
+    <div class="manager-kpi"><p class="label">Stock proyectado fin de mes</p><p class="value">${fmt(Math.round(k.stockProyectado))}</p></div>`;
+
+  const criticalCodes=rows
+    .filter(r=>r.coverage_level==='red')
+    .sort((a,b)=>Number(a.coverage_days||0)-Number(b.coverage_days||0))
+    .slice(0,5)
+    .map(r=>r.item_code);
+
+  document.getElementById('managerAlerts').innerHTML=`
+    <span class="insight-chip">Fecha corte: ${cutoffText}</span>
+    <span class="insight-chip ${projectedClass}">${projectedText}</span>
+    <span class="insight-chip alert">Cobertura critica: ${redCount} item(s)</span>
+    <span class="insight-chip">Cobertura en alerta: ${yellowCount} item(s)</span>
+    ${criticalCodes.length?`<span class="insight-chip alert">Prioridad compra: ${criticalCodes.join(', ')}</span>`:''}`;
+
+  const order={ red:0, yellow:1, green:2 };
+  const tableRows=[...rows].sort((a,b)=>{
+    const ao=order[a.coverage_level] ?? 3;
+    const bo=order[b.coverage_level] ?? 3;
+    if(ao!==bo) return ao-bo;
+    return Number(a.coverage_days||99999)-Number(b.coverage_days||99999);
+  });
+  document.getElementById('managerTable').innerHTML=`
+    <table>
+      <thead>
+        <tr>
+          <th>Prioridad</th>
+          <th>Item</th>
+          <th>Descripcion</th>
+          <th>Stock corte</th>
+          <th>Consumo acumulado</th>
+          <th>Run-rate diario</th>
+          <th>Cobertura estimada</th>
+          <th>Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${tableRows.map((r,i)=>`
+          <tr>
+            <td>${i+1}</td>
+            <td><strong>${esc(r.item_code)}</strong></td>
+            <td>${esc(r.item_name)}</td>
+            <td>${fmt(r.cutoff_balance)}</td>
+            <td>${fmt(r.out_until)}</td>
+            <td>${fmt(Math.round(r.daily_out_rate||0))}</td>
+            <td>${r.coverage_days==null?'Sin consumo':`${fmt(Math.max(0,Math.round(r.coverage_days)))} dias`}</td>
+            <td><span class="badge ${r.coverage_level}">${esc(r.coverage_text)}</span></td>
+          </tr>`).join('')}
       </tbody>
     </table>`;
 }
@@ -1078,6 +1400,7 @@ async function loadDashboard(){
     const out=await safeServer('getDashboard',{token:state.token,month});
     state.dashboardRaw=out;
     state.dashboard=out;
+    syncCutoffSelector(out.days||[]);
     const validItems=new Set((out.rows||[]).map(r=>String(r.item_code)));
     if(state.selectedItems){
       const kept=new Set([...state.selectedItems].filter(x=>validItems.has(x)));
@@ -1091,21 +1414,23 @@ async function loadDashboard(){
 function renderDashboardPanels(){
   const out=getFilteredDashboardOut(state.dashboardRaw);
   if(!out) return;
+  const model=buildCutoffModel(out);
 
-  const k=calcKpis(out);
+  const k=calcKpis(out, model);
     document.getElementById('kpi').innerHTML=`
       <div class="kpi emph"><p class="k-label">Items activos</p><p class="k-value">${k.items}</p></div>
       <div class="kpi"><p class="k-label">Saldo total inicio</p><p class="k-value">${fmt(k.inicio)}</p></div>
-      <div class="kpi"><p class="k-label">Saldo total final</p><p class="k-value">${fmt(k.final)}</p></div>
-      <div class="kpi"><p class="k-label">Items en cero</p><p class="k-value">${k.criticos}</p></div>
-      <div class="kpi"><p class="k-label">Variacion del mes</p><p class="k-value">${fmt(k.variacion)}</p></div>`;
+      <div class="kpi"><p class="k-label">Saldo total al corte</p><p class="k-value">${fmt(k.corte)}</p></div>
+      <div class="kpi"><p class="k-label">Items en cero al corte</p><p class="k-value">${k.criticos}</p></div>
+      <div class="kpi"><p class="k-label">Variacion al corte</p><p class="k-value">${fmt(k.variacion)}</p></div>`;
 
     const trendClass = k.variacion>=0 ? 'good' : 'alert';
-    const trendText = k.variacion>=0 ? 'El stock total subio este mes' : 'El stock total bajo este mes';
+    const trendText = k.variacion>=0 ? 'El stock acumulado mejora al corte' : 'El stock acumulado cae al corte';
     document.getElementById('insights').innerHTML=`
       <span class="insight-chip ${trendClass}">${trendText}</span>
-      <span class="insight-chip">Top criticidad: ${k.criticos} item(s) en cero</span>
-      <span class="insight-chip">Periodo analizado: ${state.dashboardRaw.month}</span>
+      <span class="insight-chip">Fecha corte activa: ${model.cutoffLabel}</span>
+      <span class="insight-chip">Consumo acumulado: ${fmt(k.consumoAcum)}</span>
+      <span class="insight-chip">Run-rate diario: ${fmt(Math.round(k.runRate))}</span>
       ${state.selectedItems?`<span class="insight-chip alert">Filtro lasso activo: ${state.selectedItems.size} item(s)</span>`:''}`;
 
     const head=['<th>Item</th><th>Descripcion</th><th>Inicio</th>'];
@@ -1124,9 +1449,10 @@ function renderDashboardPanels(){
     }).join('');
 
     document.getElementById('dashTable').innerHTML=`<table><thead><tr>${head.join('')}</tr></thead><tbody>${rows}</tbody></table>`;
-  renderDashboardCharts(out);
-  renderSemaforo(out);
-  renderSemaforoArea(out);
+  renderDashboardCharts(out, model);
+  renderManagerPanel(out, model, k);
+  renderSemaforo(model);
+  renderSemaforoArea(model);
 }
 
 function renderMovements(){

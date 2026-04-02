@@ -63,3 +63,11 @@ upsertUser('admin2', 'ClaveSegura123!', 'admin', true)
 - Cambiar la clave de `user` inmediatamente.
 - Limitar acceso del deploy a usuarios autenticados del dominio.
 - No compartir el editor de Apps Script con usuarios no admin.
+
+## KPIs gerenciales del tablero
+- `Fecha de corte`: dia del mes usado para todos los indicadores operativos.
+- `Stock total al corte`: inventario disponible real al dia seleccionado.
+- `Consumo acumulado` y `run-rate diario`: ritmo de salida para estimar necesidad de compra.
+- `Stock proyectado fin de mes`: alerta temprana de posible quiebre.
+- `Cobertura estimada por item`: dias de cobertura segun consumo acumulado al corte.
+- `Top servicios consumidores`: areas con mayor presion de demanda para coordinar reposicion.
