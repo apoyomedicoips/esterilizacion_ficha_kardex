@@ -127,6 +127,8 @@ function getDashboard(payload) {
 
   const netBefore = {};
   const delta = {};
+  const monthMovements = [];
+  const serviceAgg = {};
 
   movements.forEach((m) => {
     const md = parseDateSafe_(m.movement_date);
@@ -147,6 +149,22 @@ function getDashboard(payload) {
     const day = md.getDate();
     const key = itemCode + '|' + day;
     delta[key] = (delta[key] || 0) + sign * qty;
+
+    const service = String(m.service_name || '').trim().toUpperCase();
+    monthMovements.push({
+      movement_date: m.movement_date,
+      day: day,
+      item_code: itemCode,
+      service_name: service,
+      move_type: m.move_type,
+      quantity: qty
+    });
+
+    if (!serviceAgg[service]) {
+      serviceAgg[service] = { in_qty: 0, out_qty: 0 };
+    }
+    if (m.move_type === 'IN') serviceAgg[service].in_qty += qty;
+    if (m.move_type === 'OUT') serviceAgg[service].out_qty += qty;
   });
 
   const rows = items.map((item) => {
@@ -166,11 +184,22 @@ function getDashboard(payload) {
     };
   });
 
+  const serviceSummary = Object.keys(serviceAgg)
+    .map((name) => ({
+      service_name: name,
+      in_qty: serviceAgg[name].in_qty,
+      out_qty: serviceAgg[name].out_qty,
+      net_qty: serviceAgg[name].in_qty - serviceAgg[name].out_qty
+    }))
+    .sort((a, b) => b.out_qty - a.out_qty);
+
   return {
     month: Utilities.formatDate(firstDay, Session.getScriptTimeZone(), 'yyyy-MM'),
     days,
     rows,
-    recent: movements.slice(0, 100)
+    recent: movements.slice(0, 200),
+    month_movements: monthMovements,
+    service_summary: serviceSummary
   };
 }
 

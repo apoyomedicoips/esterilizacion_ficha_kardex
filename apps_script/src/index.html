@@ -313,6 +313,26 @@
     .badge.red { background:#ffeceb; color:#9e2f28; border-color:#efb9b3; }
     .badge.yellow { background:#fff9e8; color:#7f610b; border-color:#efdca0; }
     .badge.green { background:#ecf8ef; color:#1d6f3e; border-color:#bfdcc8; }
+    .select-box {
+      border: 1px solid #d1e2e7;
+      border-radius: 12px;
+      padding: 10px;
+      background: linear-gradient(160deg,#ffffff 0%,#f7fbfd 100%);
+      margin-top: 10px;
+    }
+    .select-title {
+      margin: 0 0 6px;
+      color: #164c58;
+      font-size: 0.95rem;
+      font-weight: 800;
+    }
+    .service-box {
+      margin-top: 12px;
+      border: 1px solid #d2e2e7;
+      border-radius: 12px;
+      padding: 10px;
+      background: linear-gradient(160deg,#ffffff 0%,#f7fbfd 100%);
+    }
 
     .grid {
       display: grid;
@@ -445,6 +465,7 @@
     }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 </head>
 <body>
   <header class="top">
@@ -470,12 +491,18 @@ const state = {
   user: null,
   bootstrap: null,
   dashboard: null,
+  dashboardRaw: null,
+  selectedItems: null,
   currentView: 'dashboard',
   movementType: 'OUT',
   charts: [],
   semaforo: {
     rojo: Number(localStorage.getItem('kardex_sem_rojo') || 50),
     amarillo: Number(localStorage.getItem('kardex_sem_amarillo') || 150)
+  },
+  semaforoArea: {
+    amarillo: Number(localStorage.getItem('kardex_area_amarillo') || 120),
+    rojo: Number(localStorage.getItem('kardex_area_rojo') || 280)
   }
 };
 
@@ -641,6 +668,15 @@ async function renderDashboard(){
         <button id="loadBtn">Actualizar tablero</button>
       </div>
 
+      <div class="select-box">
+        <p class="select-title">Filtro inteligente por seleccion de area (lasso)</p>
+        <p class="help" style="margin-bottom:8px">Dibuje una forma libre sobre el grafico para filtrar todo el tablero por items seleccionados.</p>
+        <div class="btn-row" style="margin-bottom:8px">
+          <button id="clearSelection" style="width:auto;background:#5f7581">Quitar filtro de seleccion</button>
+        </div>
+        <div class="chart-wrap" style="height:300px"><div id="lassoPlot" style="width:100%;height:100%"></div></div>
+      </div>
+
       <div class="analytics-grid" id="analyticsGrid">
         <div class="chart-card">
           <p class="chart-title">Distribucion del stock final por item</p>
@@ -680,11 +716,32 @@ async function renderDashboard(){
         <div id="semTable" class="table"></div>
       </div>
 
+      <div class="service-box">
+        <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">Semaforo por area / servicio</h3>
+        <p class="help" style="margin-bottom:8px">Prioriza areas con mayor consumo (salidas) durante el mes seleccionado.</p>
+        <div class="semaforo-head">
+          <div class="field">
+            <label style="margin-top:0">Amarillo desde</label>
+            <input id="semAreaAmarillo" type="number" min="0" step="1" />
+          </div>
+          <div class="field">
+            <label style="margin-top:0">Rojo desde</label>
+            <input id="semAreaRojo" type="number" min="0" step="1" />
+          </div>
+          <button id="semAreaApply" style="width:auto">Aplicar</button>
+          <button id="semAreaReset" style="width:auto;background:#5b7480">Restablecer</button>
+        </div>
+        <div id="semAreaKpis" class="semaforo-kpis"></div>
+        <div id="semAreaTable" class="table"></div>
+      </div>
+
       <div id="dashTable" class="table" style="margin-top:12px"></div>
     </section>`;
 
   document.getElementById('semRojo').value = state.semaforo.rojo;
   document.getElementById('semAmarillo').value = state.semaforo.amarillo;
+  document.getElementById('semAreaAmarillo').value = state.semaforoArea.amarillo;
+  document.getElementById('semAreaRojo').value = state.semaforoArea.rojo;
   document.getElementById('semApply').onclick=()=>{
     const rojo=Math.max(0,Number(document.getElementById('semRojo').value||0));
     const amarillo=Math.max(0,Number(document.getElementById('semAmarillo').value||0));
@@ -702,6 +759,27 @@ async function renderDashboard(){
     localStorage.setItem('kardex_sem_rojo','50');
     localStorage.setItem('kardex_sem_amarillo','150');
     if(state.dashboard) renderSemaforo(state.dashboard);
+  };
+  document.getElementById('semAreaApply').onclick=()=>{
+    const y=Math.max(0,Number(document.getElementById('semAreaAmarillo').value||0));
+    const r=Math.max(0,Number(document.getElementById('semAreaRojo').value||0));
+    if(r<y){ showMsg('El umbral rojo de area debe ser mayor o igual al amarillo.'); return; }
+    state.semaforoArea.amarillo=y; state.semaforoArea.rojo=r;
+    localStorage.setItem('kardex_area_amarillo',String(y));
+    localStorage.setItem('kardex_area_rojo',String(r));
+    if(state.dashboardRaw) renderDashboardPanels();
+  };
+  document.getElementById('semAreaReset').onclick=()=>{
+    state.semaforoArea={amarillo:120, rojo:280};
+    document.getElementById('semAreaAmarillo').value=120;
+    document.getElementById('semAreaRojo').value=280;
+    localStorage.setItem('kardex_area_amarillo','120');
+    localStorage.setItem('kardex_area_rojo','280');
+    if(state.dashboardRaw) renderDashboardPanels();
+  };
+  document.getElementById('clearSelection').onclick=()=>{
+    state.selectedItems=null;
+    if(state.dashboardRaw) renderDashboardPanels();
   };
 
   document.getElementById('loadBtn').onclick=async()=>{ await loadDashboard(); };
@@ -724,6 +802,52 @@ function calcKpis(out){
     criticos: bajo,
     variacion: totalFinal-totalInicio
   };
+}
+
+function getFilteredDashboardOut(raw){
+  if(!raw) return null;
+  if(!state.selectedItems || state.selectedItems.size===0) return raw;
+  const keep=state.selectedItems;
+  const rows=(raw.rows||[]).filter(r=>keep.has(String(r.item_code)));
+  const mm=(raw.month_movements||[]).filter(m=>keep.has(String(m.item_code)));
+  return Object.assign({}, raw, { rows: rows, month_movements: mm });
+}
+
+function renderLassoSelector(raw){
+  const container=document.getElementById('lassoPlot');
+  if(!container || typeof Plotly==='undefined' || !raw) return;
+  const rows=raw.rows||[];
+  const x=rows.map(r=>Number(r.end_balance||0));
+  const y=rows.map(r=>Number(r.end_balance||0)-Number(r.start_balance||0));
+  const labels=rows.map(r=>String(r.item_code));
+  const selected=state.selectedItems || new Set();
+  const colors=labels.map(l=>selected.has(l)?'#e66f51':'#1c89a0');
+
+  const trace={
+    x:x, y:y, text:labels, mode:'markers+text', type:'scatter',
+    textposition:'top center',
+    marker:{ size:10, color:colors, line:{color:'#ffffff', width:1} },
+    hovertemplate:'Item %{text}<br>Stock final: %{x}<br>Variacion: %{y}<extra></extra>'
+  };
+  const layout={
+    margin:{l:45,r:15,t:10,b:40},
+    paper_bgcolor:'rgba(0,0,0,0)',
+    plot_bgcolor:'#ffffff',
+    dragmode:'lasso',
+    xaxis:{title:'Stock final'},
+    yaxis:{title:'Variacion mensual'}
+  };
+  Plotly.react(container,[trace],layout,{displayModeBar:true,responsive:true,modeBarButtonsToRemove:['autoScale2d','lasso2d','select2d'],displaylogo:false});
+  container.on('plotly_selected',(ev)=>{
+    if(!ev || !ev.points || ev.points.length===0){ return; }
+    const set=new Set(ev.points.map(p=>String(labels[p.pointIndex])));
+    state.selectedItems=set;
+    renderDashboardPanels();
+  });
+  container.on('plotly_deselect',()=>{
+    state.selectedItems=null;
+    renderDashboardPanels();
+  });
 }
 
 function destroyDashboardCharts(){
@@ -900,13 +1024,75 @@ function renderSemaforo(out){
     </table>`;
 }
 
+function renderSemaforoArea(out){
+  const mm=(out && out.month_movements)||[];
+  const agg={};
+  mm.forEach(m=>{
+    const svc=String(m.service_name||'').trim().toUpperCase();
+    if(!svc) return;
+    if(!agg[svc]) agg[svc]={in_qty:0,out_qty:0};
+    const q=Number(m.quantity||0);
+    if(String(m.move_type).toUpperCase()==='IN') agg[svc].in_qty+=q;
+    if(String(m.move_type).toUpperCase()==='OUT') agg[svc].out_qty+=q;
+  });
+  const y=Number(state.semaforoArea.amarillo||0);
+  const r=Number(state.semaforoArea.rojo||0);
+  const rows=Object.keys(agg).map(s=>{
+    const outq=Number(agg[s].out_qty||0), inq=Number(agg[s].in_qty||0);
+    let level='green';
+    if(outq>=r) level='red'; else if(outq>=y) level='yellow';
+    return {service:s,in_qty:inq,out_qty:outq,net:inq-outq,level};
+  }).sort((a,b)=>({'red':0,'yellow':1,'green':2}[a.level]-({'red':0,'yellow':1,'green':2}[b.level]) || b.out_qty-a.out_qty));
+
+  const cr=rows.filter(x=>x.level==='red').length;
+  const cy=rows.filter(x=>x.level==='yellow').length;
+  const cg=rows.filter(x=>x.level==='green').length;
+  const kpis=document.getElementById('semAreaKpis');
+  const table=document.getElementById('semAreaTable');
+  if(!kpis || !table) return;
+
+  kpis.innerHTML=`
+    <div class="traffic red">Rojo: ${cr}</div>
+    <div class="traffic yellow">Amarillo: ${cy}</div>
+    <div class="traffic green">Verde: ${cg}</div>`;
+
+  table.innerHTML=`
+    <table>
+      <thead><tr><th>Prioridad</th><th>Area/Servicio</th><th>Salidas mes</th><th>Entradas mes</th><th>Neto</th><th>Estado</th></tr></thead>
+      <tbody>
+      ${rows.map((r0,i)=>`<tr>
+        <td>${i+1}</td>
+        <td>${esc(r0.service)}</td>
+        <td>${fmt(r0.out_qty)}</td>
+        <td>${fmt(r0.in_qty)}</td>
+        <td>${fmt(r0.net)}</td>
+        <td><span class="badge ${r0.level}">${semaforoLabel(r0.level)}</span></td>
+      </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
 async function loadDashboard(){
   try{
     const month=document.getElementById('month').value;
     const out=await safeServer('getDashboard',{token:state.token,month});
+    state.dashboardRaw=out;
     state.dashboard=out;
+    const validItems=new Set((out.rows||[]).map(r=>String(r.item_code)));
+    if(state.selectedItems){
+      const kept=new Set([...state.selectedItems].filter(x=>validItems.has(x)));
+      state.selectedItems = kept.size ? kept : null;
+    }
+    renderLassoSelector(out);
+    renderDashboardPanels();
+  }catch(e){ showMsg(e); }
+}
 
-    const k=calcKpis(out);
+function renderDashboardPanels(){
+  const out=getFilteredDashboardOut(state.dashboardRaw);
+  if(!out) return;
+
+  const k=calcKpis(out);
     document.getElementById('kpi').innerHTML=`
       <div class="kpi emph"><p class="k-label">Items activos</p><p class="k-value">${k.items}</p></div>
       <div class="kpi"><p class="k-label">Saldo total inicio</p><p class="k-value">${fmt(k.inicio)}</p></div>
@@ -919,7 +1105,8 @@ async function loadDashboard(){
     document.getElementById('insights').innerHTML=`
       <span class="insight-chip ${trendClass}">${trendText}</span>
       <span class="insight-chip">Top criticidad: ${k.criticos} item(s) en cero</span>
-      <span class="insight-chip">Periodo analizado: ${out.month}</span>`;
+      <span class="insight-chip">Periodo analizado: ${state.dashboardRaw.month}</span>
+      ${state.selectedItems?`<span class="insight-chip alert">Filtro lasso activo: ${state.selectedItems.size} item(s)</span>`:''}`;
 
     const head=['<th>Item</th><th>Descripcion</th><th>Inicio</th>'];
     out.days.forEach(d=>head.push(`<th>${d}</th>`));
@@ -937,9 +1124,9 @@ async function loadDashboard(){
     }).join('');
 
     document.getElementById('dashTable').innerHTML=`<table><thead><tr>${head.join('')}</tr></thead><tbody>${rows}</tbody></table>`;
-    renderDashboardCharts(out);
-    renderSemaforo(out);
-  }catch(e){ showMsg(e); }
+  renderDashboardCharts(out);
+  renderSemaforo(out);
+  renderSemaforoArea(out);
 }
 
 function renderMovements(){
@@ -974,15 +1161,23 @@ function renderMovements(){
       </div>
       <div>
         <label>Item</label>
+        <input id="m_item_search" type="text" placeholder="Buscar item por codigo o descripcion" />
         <select id="m_item">${items.map(i=>`<option value="${escAttr(i.item_code)}">${esc(i.item_code)} - ${esc(i.item_name)}</option>`).join('')}</select>
       </div>
       <div>
         <label>Servicio</label>
+        <input id="m_service_search" type="text" placeholder="Buscar servicio" />
         <select id="m_service">${services.map(s=>`<option value="${escAttr(s.service_name)}">${esc(s.service_name)}</option>`).join('')}</select>
       </div>
       <div>
         <label>Cantidad</label>
         <input id="m_qty" type="number" min="1" placeholder="Ejemplo: 10"/>
+        <div class="btn-row" style="margin-top:6px">
+          <button type="button" class="quick-qty" data-v="5" style="width:auto;background:#4f7f8e">+5</button>
+          <button type="button" class="quick-qty" data-v="10" style="width:auto;background:#4f7f8e">+10</button>
+          <button type="button" class="quick-qty" data-v="20" style="width:auto;background:#4f7f8e">+20</button>
+          <button type="button" class="quick-qty" data-v="50" style="width:auto;background:#4f7f8e">+50</button>
+        </div>
       </div>
       <div>
         <label>Nro. boleta / ticket (opcional)</label>
@@ -1010,6 +1205,37 @@ function renderMovements(){
 
   document.getElementById('btnOut').onclick=()=>setType('OUT');
   document.getElementById('btnIn').onclick=()=>setType('IN');
+  const itemSelect=document.getElementById('m_item');
+  const serviceSelect=document.getElementById('m_service');
+  const allItemOptions=[...itemSelect.options].map(o=>({value:o.value,text:o.text}));
+  const allServiceOptions=[...serviceSelect.options].map(o=>({value:o.value,text:o.text}));
+
+  function refillSelect(sel, opts){
+    const cur=sel.value;
+    sel.innerHTML=opts.map(o=>`<option value="${escAttr(o.value)}">${esc(o.text)}</option>`).join('');
+    const has=opts.some(o=>o.value===cur);
+    if(has) sel.value=cur;
+  }
+
+  document.getElementById('m_item_search').addEventListener('input',(e)=>{
+    const q=String(e.target.value||'').trim().toLowerCase();
+    const filtered=allItemOptions.filter(o=>o.text.toLowerCase().includes(q));
+    refillSelect(itemSelect, filtered.length?filtered:allItemOptions);
+  });
+  document.getElementById('m_service_search').addEventListener('input',(e)=>{
+    const q=String(e.target.value||'').trim().toLowerCase();
+    const filtered=allServiceOptions.filter(o=>o.text.toLowerCase().includes(q));
+    refillSelect(serviceSelect, filtered.length?filtered:allServiceOptions);
+  });
+
+  [...document.querySelectorAll('.quick-qty')].forEach(b=>{
+    b.onclick=()=>{
+      const add=Number(b.getAttribute('data-v')||0);
+      const qty=document.getElementById('m_qty');
+      qty.value=String((Number(qty.value||0)+add)||add);
+      qty.focus();
+    };
+  });
 
   document.getElementById('saveMove').onclick=async()=>{
     try{
