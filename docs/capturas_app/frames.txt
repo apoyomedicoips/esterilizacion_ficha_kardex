@@ -1,0 +1,13 @@
+file '01_tablero.png'
+duration 1.5
+file '02_cierre_mensual.png'
+duration 1.5
+file '03_registrar.png'
+duration 1.5
+file '04_items.png'
+duration 1.5
+file '05_servicios.png'
+duration 1.5
+file '06_auditoria.png'
+duration 1.5
+file '06_auditoria.png'
