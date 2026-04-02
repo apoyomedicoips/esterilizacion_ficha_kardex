@@ -244,6 +244,75 @@
       grid-template-columns: repeat(2, minmax(280px, 1fr));
       gap: 10px;
     }
+    .dashboard-shell {
+      display: grid;
+      grid-template-columns: 290px minmax(0, 1fr);
+      gap: 12px;
+      margin-top: 10px;
+      align-items: start;
+    }
+    .dashboard-left {
+      border: 1px solid #d2e2e7;
+      border-radius: 12px;
+      background: linear-gradient(170deg, #ffffff 0%, #f5fbfd 100%);
+      padding: 10px;
+      position: sticky;
+      top: 92px;
+      max-height: calc(100vh - 116px);
+      overflow: auto;
+    }
+    .sheet-title {
+      margin: 0;
+      color: #174f5b;
+      font-size: 0.93rem;
+      font-weight: 800;
+    }
+    .sheet-subtitle {
+      margin: 4px 0 8px;
+      color: #4e6971;
+      font-size: 0.82rem;
+    }
+    .sheet-search {
+      margin-bottom: 8px;
+    }
+    .sheet-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .sheet-tab {
+      text-align: left;
+      border: 1px solid #cddfe5;
+      background: #f9fcfd;
+      color: #204f5c;
+      border-radius: 10px;
+      padding: 8px 9px;
+      cursor: pointer;
+    }
+    .sheet-tab.active {
+      background: linear-gradient(140deg, #0f6776 0%, #167f92 100%);
+      color: #fff;
+      border-color: transparent;
+    }
+    .sheet-tab .main {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.86rem;
+      font-weight: 800;
+    }
+    .sheet-tab .sub {
+      margin-top: 2px;
+      font-size: 0.78rem;
+      opacity: 0.92;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .dashboard-right {
+      min-width: 0;
+    }
     .chart-card {
       border: 1px solid #d1e2e7;
       border-radius: 12px;
@@ -372,6 +441,27 @@
       font-weight: 800;
       color: #0f4f5c;
     }
+    .item-sheet-card {
+      margin-top: 12px;
+      border: 1px solid #d2e2e7;
+      border-radius: 12px;
+      padding: 10px;
+      background: linear-gradient(160deg,#ffffff 0%,#f7fbfd 100%);
+    }
+    .item-sheet-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .item-sheet-kpis {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(130px, 1fr));
+      gap: 8px;
+      margin-bottom: 8px;
+    }
 
     .grid {
       display: grid;
@@ -496,12 +586,18 @@
 
     @media (max-width: 980px) {
       .inline { grid-template-columns: 1fr; }
+      .dashboard-shell { grid-template-columns: 1fr; }
+      .dashboard-left {
+        position: static;
+        max-height: none;
+      }
       .grid { grid-template-columns: 1fr; }
       .move-type { grid-template-columns: 1fr; }
       .summary { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
       .steps { grid-template-columns: 1fr; }
       .analytics-grid { grid-template-columns: 1fr; }
       .manager-kpis { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
+      .item-sheet-kpis { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
       main { padding: 12px; }
     }
   </style>
@@ -534,6 +630,7 @@ const state = {
   dashboard: null,
   dashboardRaw: null,
   selectedItems: null,
+  selectedSheetItem: localStorage.getItem('kardex_selected_item') || '',
   cutoffDay: Number(localStorage.getItem('kardex_cutoff_day') || 0),
   currentView: 'dashboard',
   movementType: 'OUT',
@@ -714,93 +811,114 @@ async function renderDashboard(){
         <button id="loadBtn">Actualizar tablero</button>
       </div>
 
-      <div class="select-box">
-        <p class="select-title">Filtro inteligente por seleccion de area (lasso)</p>
-        <p class="help" style="margin-bottom:8px">Dibuje una forma libre sobre el grafico para filtrar todo el tablero por items seleccionados.</p>
-        <div class="btn-row" style="margin-bottom:8px">
-          <button id="clearSelection" style="width:auto;background:#5f7581">Quitar filtro de seleccion</button>
-        </div>
-        <div class="chart-wrap" style="height:300px"><div id="lassoPlot" style="width:100%;height:100%"></div></div>
-      </div>
-
-      <div class="analytics-grid" id="analyticsGrid">
-        <div class="chart-card">
-          <p class="chart-title">Distribucion del stock a fecha de corte</p>
-          <div class="chart-wrap"><canvas id="chartPie"></canvas></div>
-        </div>
-        <div class="chart-card">
-          <p class="chart-title">Items con menor stock a fecha de corte</p>
-          <div class="chart-wrap"><canvas id="chartLow"></canvas></div>
-        </div>
-        <div class="chart-card">
-          <p class="chart-title">Serie temporal: stock total del mes</p>
-          <div class="chart-wrap"><canvas id="chartSeries"></canvas></div>
-        </div>
-        <div class="chart-card">
-          <p class="chart-title">Variacion al corte por item (corte - inicio)</p>
-          <div class="chart-wrap"><canvas id="chartVar"></canvas></div>
-        </div>
-        <div class="chart-card">
-          <p class="chart-title">Consumo acumulado por servicio (Top 10)</p>
-          <div class="chart-wrap"><canvas id="chartService"></canvas></div>
-        </div>
-        <div class="chart-card">
-          <p class="chart-title">Flujo acumulado al corte (entradas vs salidas)</p>
-          <div class="chart-wrap"><canvas id="chartFlow"></canvas></div>
-        </div>
-      </div>
-
-      <div class="manager-box">
-        <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">Control gerencial de abastecimiento</h3>
-        <p class="help" style="margin-bottom:8px">Resumen para jefatura: stock al corte, ritmo de consumo y cobertura estimada por item.</p>
-        <div id="managerKpis" class="manager-kpis"></div>
-        <div id="managerAlerts" class="insights"></div>
-        <div id="managerTable" class="table"></div>
-      </div>
-
-      <div class="semaforo-box">
-        <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">Semaforo clinico de reposicion</h3>
-        <p class="help" style="margin-bottom:8px">Clasifica cada item por stock a fecha de corte para priorizar reposicion (rojo primero).</p>
-        <div class="semaforo-head">
-          <div class="field">
-            <label style="margin-top:0">Umbral rojo (critico)</label>
-            <input id="semRojo" type="number" min="0" step="1" />
+      <div class="dashboard-shell">
+        <aside class="dashboard-left">
+          <p class="sheet-title">Fichas por item</p>
+          <p class="sheet-subtitle">Simula hojas individuales del Kardex.</p>
+          <input id="sheetSearch" class="sheet-search" type="text" placeholder="Buscar item..." />
+          <div class="btn-row" style="margin-bottom:8px">
+            <button id="clearSelection" style="width:auto;background:#5f7581">Quitar filtro lasso</button>
           </div>
-          <div class="field">
-            <label style="margin-top:0">Umbral amarillo (alerta)</label>
-            <input id="semAmarillo" type="number" min="0" step="1" />
-          </div>
-          <button id="semApply" style="width:auto">Aplicar semaforo</button>
-          <button id="semReset" style="width:auto;background:#5b7480">Restablecer</button>
-        </div>
-        <div id="semKpis" class="semaforo-kpis"></div>
-        <div id="semPills" class="semaforo-pills"></div>
-        <div id="semTable" class="table"></div>
-      </div>
+          <div id="sheetList" class="sheet-list"></div>
+        </aside>
 
-      <div class="service-box">
-        <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">Semaforo por area / servicio</h3>
-        <p class="help" style="margin-bottom:8px">Prioriza areas con mayor consumo (salidas) durante el mes seleccionado.</p>
-        <div class="semaforo-head">
-          <div class="field">
-            <label style="margin-top:0">Amarillo desde</label>
-            <input id="semAreaAmarillo" type="number" min="0" step="1" />
+        <div class="dashboard-right">
+          <div class="select-box">
+            <p class="select-title">Filtro inteligente por seleccion de area (lasso)</p>
+            <p class="help" style="margin-bottom:8px">Dibuje una forma libre para filtrar los indicadores a un grupo de items.</p>
+            <div class="chart-wrap" style="height:260px"><div id="lassoPlot" style="width:100%;height:100%"></div></div>
           </div>
-          <div class="field">
-            <label style="margin-top:0">Rojo desde</label>
-            <input id="semAreaRojo" type="number" min="0" step="1" />
-          </div>
-          <button id="semAreaApply" style="width:auto">Aplicar</button>
-          <button id="semAreaReset" style="width:auto;background:#5b7480">Restablecer</button>
-        </div>
-        <div id="semAreaKpis" class="semaforo-kpis"></div>
-        <div id="semAreaTable" class="table"></div>
-      </div>
 
-      <details style="margin-top:12px">
-        <summary style="cursor:pointer;font-weight:800;color:#184d59">Ver detalle diario completo por item</summary>
-        <div id="dashTable" class="table" style="margin-top:10px"></div>
-      </details>
+          <div class="item-sheet-card">
+            <div class="item-sheet-head">
+              <h3 id="sheetTitle" style="margin:0;color:#184d59;font-size:1rem">Ficha del item</h3>
+              <span id="sheetCoverage" class="badge">-</span>
+            </div>
+            <div id="sheetKpis" class="item-sheet-kpis"></div>
+            <div class="analytics-grid">
+              <div class="chart-card">
+                <p class="chart-title">Evolucion diaria del stock del item</p>
+                <div class="chart-wrap"><canvas id="chartItemStock"></canvas></div>
+              </div>
+              <div class="chart-card">
+                <p class="chart-title">Entradas vs salidas diarias del item</p>
+                <div class="chart-wrap"><canvas id="chartItemFlow"></canvas></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="analytics-grid" id="analyticsGrid">
+            <div class="chart-card">
+              <p class="chart-title">Consumo acumulado por servicio (Top 10)</p>
+              <div class="chart-wrap"><canvas id="chartService"></canvas></div>
+            </div>
+            <div class="chart-card">
+              <p class="chart-title">Items criticos por cobertura (dias)</p>
+              <div class="chart-wrap"><canvas id="chartCoverage"></canvas></div>
+            </div>
+            <div class="chart-card">
+              <p class="chart-title">Stock total diario del grupo filtrado</p>
+              <div class="chart-wrap"><canvas id="chartSeries"></canvas></div>
+            </div>
+            <div class="chart-card">
+              <p class="chart-title">Flujo acumulado (entradas vs salidas)</p>
+              <div class="chart-wrap"><canvas id="chartFlow"></canvas></div>
+            </div>
+          </div>
+
+          <div class="manager-box">
+            <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">Control gerencial de abastecimiento</h3>
+            <p class="help" style="margin-bottom:8px">Resumen para jefatura: stock al corte, ritmo de consumo y cobertura estimada por item.</p>
+            <div id="managerKpis" class="manager-kpis"></div>
+            <div id="managerAlerts" class="insights"></div>
+            <div id="managerTable" class="table"></div>
+          </div>
+
+          <div class="semaforo-box">
+            <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">Semaforo clinico de reposicion</h3>
+            <p class="help" style="margin-bottom:8px">Clasifica cada item por stock a fecha de corte para priorizar reposicion (rojo primero).</p>
+            <div class="semaforo-head">
+              <div class="field">
+                <label style="margin-top:0">Umbral rojo (critico)</label>
+                <input id="semRojo" type="number" min="0" step="1" />
+              </div>
+              <div class="field">
+                <label style="margin-top:0">Umbral amarillo (alerta)</label>
+                <input id="semAmarillo" type="number" min="0" step="1" />
+              </div>
+              <button id="semApply" style="width:auto">Aplicar semaforo</button>
+              <button id="semReset" style="width:auto;background:#5b7480">Restablecer</button>
+            </div>
+            <div id="semKpis" class="semaforo-kpis"></div>
+            <div id="semPills" class="semaforo-pills"></div>
+            <div id="semTable" class="table"></div>
+          </div>
+
+          <div class="service-box">
+            <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">Semaforo por area / servicio</h3>
+            <p class="help" style="margin-bottom:8px">Prioriza areas con mayor consumo (salidas) durante el mes seleccionado.</p>
+            <div class="semaforo-head">
+              <div class="field">
+                <label style="margin-top:0">Amarillo desde</label>
+                <input id="semAreaAmarillo" type="number" min="0" step="1" />
+              </div>
+              <div class="field">
+                <label style="margin-top:0">Rojo desde</label>
+                <input id="semAreaRojo" type="number" min="0" step="1" />
+              </div>
+              <button id="semAreaApply" style="width:auto">Aplicar</button>
+              <button id="semAreaReset" style="width:auto;background:#5b7480">Restablecer</button>
+            </div>
+            <div id="semAreaKpis" class="semaforo-kpis"></div>
+            <div id="semAreaTable" class="table"></div>
+          </div>
+
+          <details style="margin-top:12px">
+            <summary style="cursor:pointer;font-weight:800;color:#184d59">Ver detalle diario completo por item</summary>
+            <div id="dashTable" class="table" style="margin-top:10px"></div>
+          </details>
+        </div>
+      </div>
     </section>`;
 
   document.getElementById('semRojo').value = state.semaforo.rojo;
@@ -844,7 +962,10 @@ async function renderDashboard(){
   };
   document.getElementById('clearSelection').onclick=()=>{
     state.selectedItems=null;
-    if(state.dashboardRaw) renderDashboardPanels();
+    if(state.dashboardRaw){
+      renderLassoSelector(state.dashboardRaw);
+      renderDashboardPanels();
+    }
   };
   document.getElementById('cutoffDay').onchange=(e)=>{
     state.cutoffDay = Number(e.target.value || 0);
@@ -853,6 +974,13 @@ async function renderDashboard(){
       renderLassoSelector(state.dashboardRaw);
       renderDashboardPanels();
     }
+  };
+  document.getElementById('sheetSearch').oninput=()=>{
+    if(!state.dashboardRaw) return;
+    const out=getFilteredDashboardOut(state.dashboardRaw);
+    const model=buildCutoffModel(out);
+    ensureSelectedSheetItem(model);
+    renderSheetMenu(model);
   };
 
   document.getElementById('loadBtn').onclick=async()=>{ await loadDashboard(); };
@@ -1056,19 +1184,101 @@ function buildDashboardAnalytics(out, model){
   const rows=(model && model.rows) || [];
   const days=(out && out.days) || [];
   const totalByDay=(model && model.totalByDay) || [];
-  const low=[...rows].sort((a,b)=>Number(a.cutoff_balance||0)-Number(b.cutoff_balance||0)).slice(0,10);
-  const varRows=[...rows].map(r=>({
-    code:r.item_code,
-    diff:Number(r.cutoff_diff||0)
-  })).sort((a,b)=>a.diff-b.diff);
-  const pieBase=[...rows].sort((a,b)=>Number(b.cutoff_balance||0)-Number(a.cutoff_balance||0));
-  const topPie=pieBase.slice(0,8);
-  const others=pieBase.slice(8).reduce((a,r)=>a+Number(r.cutoff_balance||0),0);
-  const pieLabels=topPie.map(r=>r.item_code);
-  const pieValues=topPie.map(r=>Number(r.cutoff_balance||0));
-  if(others>0){ pieLabels.push('OTROS'); pieValues.push(others); }
   const serviceTop=((model && model.serviceRows) || []).slice(0,10);
-  return {days,totalByDay,low,varRows,pieLabels,pieValues,serviceTop};
+  const coverageTop=[...rows]
+    .filter(r=>Number(r.daily_out_rate||0)>0)
+    .sort((a,b)=>Number(a.coverage_days||99999)-Number(b.coverage_days||99999))
+    .slice(0,12);
+  return {days,totalByDay,serviceTop,coverageTop};
+}
+
+function ensureSelectedSheetItem(model){
+  const rows=(model && model.rows) || [];
+  if(!rows.length){ state.selectedSheetItem=''; return; }
+  const exists=rows.some(r=>String(r.item_code)===String(state.selectedSheetItem||''));
+  if(exists) return;
+  const critical=[...rows].sort((a,b)=>
+    Number(a.coverage_days||99999)-Number(b.coverage_days||99999) ||
+    Number(a.cutoff_balance||0)-Number(b.cutoff_balance||0)
+  )[0];
+  state.selectedSheetItem=String((critical && critical.item_code) || rows[0].item_code || '');
+  localStorage.setItem('kardex_selected_item', state.selectedSheetItem);
+}
+
+function renderSheetMenu(model){
+  const list=document.getElementById('sheetList');
+  const search=document.getElementById('sheetSearch');
+  if(!list) return;
+  const q=String((search && search.value) || '').trim().toLowerCase();
+  const rows=((model && model.rows) || [])
+    .filter(r=>{
+      if(!q) return true;
+      return String(r.item_code).toLowerCase().includes(q) || String(r.item_name||'').toLowerCase().includes(q);
+    })
+    .sort((a,b)=>String(a.item_code).localeCompare(String(b.item_code)));
+
+  list.innerHTML = rows.map(r=>{
+    const active=String(r.item_code)===String(state.selectedSheetItem||'');
+    return `
+      <button class="sheet-tab ${active?'active':''}" data-code="${escAttr(r.item_code)}">
+        <div class="main">
+          <span>${esc(r.item_code)}</span>
+          <span>${fmt(r.cutoff_balance)}</span>
+        </div>
+        <div class="sub">${esc(r.item_name)}</div>
+      </button>`;
+  }).join('');
+  [...list.querySelectorAll('.sheet-tab')].forEach(btn=>{
+    btn.onclick=()=>{
+      state.selectedSheetItem=String(btn.getAttribute('data-code')||'');
+      localStorage.setItem('kardex_selected_item', state.selectedSheetItem);
+      renderDashboardPanels();
+    };
+  });
+}
+
+function getSelectedItemModel(out, model){
+  const rows=(model && model.rows) || [];
+  const selected=rows.find(r=>String(r.item_code)===String(state.selectedSheetItem||'')) || rows[0];
+  if(!selected) return null;
+  const days=(out && out.days) || [];
+  const mm=(out && out.month_movements) || [];
+  const dayIn={};
+  const dayOut={};
+  mm.forEach(m=>{
+    if(String(m.item_code)!==String(selected.item_code)) return;
+    const d=Number(m.day||0);
+    if(!d) return;
+    const q=Number(m.quantity||0);
+    const t=String(m.move_type||'').toUpperCase();
+    if(t==='IN') dayIn[d]=(dayIn[d]||0)+q;
+    if(t==='OUT') dayOut[d]=(dayOut[d]||0)+q;
+  });
+  const inSeries=days.map(d=>Number(dayIn[Number(d)]||0));
+  const outSeries=days.map(d=>Number(dayOut[Number(d)]||0));
+  return {
+    row: selected,
+    labels: days.map(d=>String(d)),
+    stockSeries: (selected.day_values||[]).map(v=>Number(v||0)),
+    inSeries,
+    outSeries
+  };
+}
+
+function renderItemSheet(out, model){
+  const payload=getSelectedItemModel(out, model);
+  if(!payload) return;
+  const row=payload.row;
+  const cutLabel=(model && model.cutoffLabel) || '-';
+  const coverageEl=document.getElementById('sheetCoverage');
+  document.getElementById('sheetTitle').textContent=`Ficha ${row.item_code} - ${row.item_name}`;
+  document.getElementById('sheetKpis').innerHTML=`
+    <div class="manager-kpi"><p class="label">Stock inicio</p><p class="value">${fmt(row.start_balance)}</p></div>
+    <div class="manager-kpi"><p class="label">Stock al corte</p><p class="value">${fmt(row.cutoff_balance)}</p></div>
+    <div class="manager-kpi"><p class="label">Consumo acumulado</p><p class="value">${fmt(row.out_until)}</p></div>
+    <div class="manager-kpi"><p class="label">Fecha corte</p><p class="value">${esc(cutLabel)}</p></div>`;
+  coverageEl.textContent=row.coverage_text || 'Estable';
+  coverageEl.className=`badge ${row.coverage_level || 'green'}`;
 }
 
 function renderDashboardCharts(out, model){
@@ -1077,76 +1287,15 @@ function renderDashboardCharts(out, model){
 
   const a=buildDashboardAnalytics(out, model);
   const days=(out.days||[]).map(d=>String(d));
+  const itemData=getSelectedItemModel(out, model);
 
-  const pieCtx=document.getElementById('chartPie');
-  const lowCtx=document.getElementById('chartLow');
-  const seriesCtx=document.getElementById('chartSeries');
-  const varCtx=document.getElementById('chartVar');
   const serviceCtx=document.getElementById('chartService');
+  const coverageCtx=document.getElementById('chartCoverage');
+  const seriesCtx=document.getElementById('chartSeries');
   const flowCtx=document.getElementById('chartFlow');
-  if(!pieCtx||!lowCtx||!seriesCtx||!varCtx||!serviceCtx||!flowCtx) return;
-
-  state.charts.push(new Chart(pieCtx,{
-    type:'pie',
-    data:{
-      labels:a.pieLabels,
-      datasets:[{ data:a.pieValues, backgroundColor:a.pieValues.map((_,i)=>colorRamp(i)), borderWidth:1 }]
-    },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } }
-  }));
-
-  state.charts.push(new Chart(lowCtx,{
-    type:'bar',
-    data:{
-      labels:a.low.map(r=>r.item_code),
-      datasets:[{
-        label:'Stock corte',
-        data:a.low.map(r=>Number(r.cutoff_balance||0)),
-        backgroundColor:a.low.map((_,i)=> i<3 ? '#e66f51' : '#2c9bb0')
-      }]
-    },
-    options:{
-      responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ display:false } },
-      scales:{ x:{ ticks:{ maxRotation:0,minRotation:0 } }, y:{ beginAtZero:true } }
-    }
-  }));
-
-  state.charts.push(new Chart(seriesCtx,{
-    type:'line',
-    data:{
-      labels:days,
-      datasets:[{
-        label:'Stock total diario',
-        data:a.totalByDay,
-        fill:true,
-        borderColor:'#0b5f6d',
-        backgroundColor:'rgba(11,95,109,0.16)',
-        tension:.25,
-        pointRadius:2
-      }]
-    },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } } }
-  }));
-
-  const varLabels=a.varRows.map(r=>r.code);
-  const varData=a.varRows.map(r=>r.diff);
-  state.charts.push(new Chart(varCtx,{
-    type:'bar',
-    data:{
-      labels:varLabels,
-      datasets:[{
-        label:'Variacion',
-        data:varData,
-        backgroundColor:varData.map(v=>v>=0 ? '#2f9e70' : '#d9654b')
-      }]
-    },
-    options:{
-      responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ display:false } },
-      scales:{ x:{ ticks:{ maxRotation:0,minRotation:0, autoSkip:true } }, y:{ beginAtZero:true } }
-    }
-  }));
+  const itemStockCtx=document.getElementById('chartItemStock');
+  const itemFlowCtx=document.getElementById('chartItemFlow');
+  if(!serviceCtx||!coverageCtx||!seriesCtx||!flowCtx||!itemStockCtx||!itemFlowCtx) return;
 
   state.charts.push(new Chart(serviceCtx,{
     type:'bar',
@@ -1164,6 +1313,40 @@ function renderDashboardCharts(out, model){
       plugins:{ legend:{ display:false } },
       scales:{ x:{ beginAtZero:true } }
     }
+  }));
+
+  state.charts.push(new Chart(coverageCtx,{
+    type:'bar',
+    data:{
+      labels:a.coverageTop.map(r=>r.item_code),
+      datasets:[{
+        label:'Dias de cobertura',
+        data:a.coverageTop.map(r=>Math.max(0, Number(r.coverage_days||0))),
+        backgroundColor:a.coverageTop.map(r=>r.coverage_level==='red'?'#d9654b':(r.coverage_level==='yellow'?'#d9b74b':'#2f9e70'))
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display:false } },
+      scales:{ y:{ beginAtZero:true } }
+    }
+  }));
+
+  state.charts.push(new Chart(seriesCtx,{
+    type:'line',
+    data:{
+      labels:days,
+      datasets:[{
+        label:'Stock total diario',
+        data:a.totalByDay,
+        fill:true,
+        borderColor:'#0b5f6d',
+        backgroundColor:'rgba(11,95,109,0.14)',
+        tension:.25,
+        pointRadius:2
+      }]
+    },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } } }
   }));
 
   state.charts.push(new Chart(flowCtx,{
@@ -1191,6 +1374,41 @@ function renderDashboardCharts(out, model){
     },
     options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } }
   }));
+
+  if(itemData){
+    state.charts.push(new Chart(itemStockCtx,{
+      type:'line',
+      data:{
+        labels:itemData.labels,
+        datasets:[{
+          label:`Stock diario ${itemData.row.item_code}`,
+          data:itemData.stockSeries,
+          borderColor:'#137184',
+          backgroundColor:'rgba(19,113,132,0.14)',
+          fill:true,
+          tension:.2,
+          pointRadius:2
+        }]
+      },
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } } }
+    }));
+
+    state.charts.push(new Chart(itemFlowCtx,{
+      type:'bar',
+      data:{
+        labels:itemData.labels,
+        datasets:[
+          { label:'Entradas', data:itemData.inSeries, backgroundColor:'#2f9e70' },
+          { label:'Salidas', data:itemData.outSeries, backgroundColor:'#d9654b' }
+        ]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{ position:'bottom' } },
+        scales:{ x:{ stacked:true }, y:{ stacked:true, beginAtZero:true } }
+      }
+    }));
+  }
 }
 
 function semaforoLevel(v, rojo, amarillo){
@@ -1415,6 +1633,8 @@ function renderDashboardPanels(){
   const out=getFilteredDashboardOut(state.dashboardRaw);
   if(!out) return;
   const model=buildCutoffModel(out);
+  ensureSelectedSheetItem(model);
+  renderSheetMenu(model);
 
   const k=calcKpis(out, model);
     document.getElementById('kpi').innerHTML=`
@@ -1431,7 +1651,8 @@ function renderDashboardPanels(){
       <span class="insight-chip">Fecha corte activa: ${model.cutoffLabel}</span>
       <span class="insight-chip">Consumo acumulado: ${fmt(k.consumoAcum)}</span>
       <span class="insight-chip">Run-rate diario: ${fmt(Math.round(k.runRate))}</span>
-      ${state.selectedItems?`<span class="insight-chip alert">Filtro lasso activo: ${state.selectedItems.size} item(s)</span>`:''}`;
+      ${state.selectedItems?`<span class="insight-chip alert">Filtro lasso activo: ${state.selectedItems.size} item(s)</span>`:''}
+      <span class="insight-chip">Ficha activa: ${esc(state.selectedSheetItem || '-')}</span>`;
 
     const head=['<th>Item</th><th>Descripcion</th><th>Inicio</th>'];
     out.days.forEach(d=>head.push(`<th>${d}</th>`));
@@ -1449,6 +1670,7 @@ function renderDashboardPanels(){
     }).join('');
 
     document.getElementById('dashTable').innerHTML=`<table><thead><tr>${head.join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+  renderItemSheet(out, model);
   renderDashboardCharts(out, model);
   renderManagerPanel(out, model, k);
   renderSemaforo(model);
