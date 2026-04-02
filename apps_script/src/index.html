@@ -867,7 +867,7 @@ async function renderDashboard(){
           <div class="chart-wrap"><canvas id="chartService"></canvas></div>
         </div>
         <div class="chart-card">
-          <p class="chart-title">Items criticos por cobertura (dias)</p>
+          <p class="chart-title">Top items: inicial vs entradas vs salidas vs saldo</p>
           <div class="chart-wrap"><canvas id="chartCoverage"></canvas></div>
         </div>
         <div class="chart-card">
@@ -1375,11 +1375,17 @@ function buildDashboardAnalytics(out, model){
   const days=(out && out.days) || [];
   const totalByDay=(model && model.totalByDay) || [];
   const serviceTop=((model && model.serviceRows) || []).slice(0,10);
-  const coverageTop=[...rows]
-    .filter(r=>Number(r.daily_out_rate||0)>0)
-    .sort((a,b)=>Number(a.coverage_days||99999)-Number(b.coverage_days||99999))
-    .slice(0,12);
-  return {days,totalByDay,serviceTop,coverageTop};
+  const topItems=[...rows]
+    .sort((a,b)=>Number(b.out_until||0)-Number(a.out_until||0))
+    .slice(0,12)
+    .map(r=>({
+      code:r.item_code,
+      start:Number(r.start_balance||0),
+      ins:Number(r.in_until||0),
+      outs:Number(r.out_until||0),
+      end:Number(r.cutoff_balance||0)
+    }));
+  return {days,totalByDay,serviceTop,topItems};
 }
 
 function ensureSelectedSheetItem(model){
@@ -1455,7 +1461,12 @@ function renderDashboardCharts(out, model){
   const itemFlowCtx=document.getElementById('chartItemFlow');
   if(!serviceCtx||!coverageCtx||!seriesCtx||!flowCtx||!itemStockCtx||!itemFlowCtx) return;
 
-  state.charts.push(new Chart(serviceCtx,{
+  function pushChart(ctx, config){
+    try { state.charts.push(new Chart(ctx, config)); }
+    catch(_e){ /* evitamos que una grafica rompa todo el tablero */ }
+  }
+
+  pushChart(serviceCtx,{
     type:'bar',
     data:{
       labels:a.serviceTop.map(r=>r.service_name),
@@ -1471,26 +1482,27 @@ function renderDashboardCharts(out, model){
       plugins:{ legend:{ display:false } },
       scales:{ x:{ beginAtZero:true } }
     }
-  }));
+  });
 
-  state.charts.push(new Chart(coverageCtx,{
+  pushChart(coverageCtx,{
     type:'bar',
     data:{
-      labels:a.coverageTop.map(r=>r.item_code),
-      datasets:[{
-        label:'Dias de cobertura',
-        data:a.coverageTop.map(r=>Math.max(0, Number(r.coverage_days||0))),
-        backgroundColor:a.coverageTop.map(r=>r.coverage_level==='red'?'#d9654b':(r.coverage_level==='yellow'?'#d9b74b':'#2f9e70'))
-      }]
+      labels:a.topItems.map(r=>r.code),
+      datasets:[
+        { label:'Stock inicial', data:a.topItems.map(r=>r.start), backgroundColor:'#2d8bba' },
+        { label:'Entradas', data:a.topItems.map(r=>r.ins), backgroundColor:'#2f9e70' },
+        { label:'Salidas', data:a.topItems.map(r=>r.outs), backgroundColor:'#d9654b' },
+        { label:'Saldo final', data:a.topItems.map(r=>r.end), backgroundColor:'#7c4dff' }
+      ]
     },
     options:{
       responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ display:false } },
+      plugins:{ legend:{ position:'bottom' } },
       scales:{ y:{ beginAtZero:true } }
     }
-  }));
+  });
 
-  state.charts.push(new Chart(seriesCtx,{
+  pushChart(seriesCtx,{
     type:'line',
     data:{
       labels:days,
@@ -1505,9 +1517,9 @@ function renderDashboardCharts(out, model){
       }]
     },
     options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } } }
-  }));
+  });
 
-  state.charts.push(new Chart(flowCtx,{
+  pushChart(flowCtx,{
     type:'line',
     data:{
       labels:days,
@@ -1531,10 +1543,10 @@ function renderDashboardCharts(out, model){
       ]
     },
     options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } }
-  }));
+  });
 
   if(itemData){
-    state.charts.push(new Chart(itemStockCtx,{
+    pushChart(itemStockCtx,{
       type:'line',
       data:{
         labels:itemData.labels,
@@ -1549,9 +1561,9 @@ function renderDashboardCharts(out, model){
         }]
       },
       options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } } }
-    }));
+    });
 
-    state.charts.push(new Chart(itemFlowCtx,{
+    pushChart(itemFlowCtx,{
       type:'bar',
       data:{
         labels:itemData.labels,
@@ -1565,7 +1577,7 @@ function renderDashboardCharts(out, model){
         plugins:{ legend:{ position:'bottom' } },
         scales:{ x:{ stacked:true }, y:{ stacked:true, beginAtZero:true } }
       }
-    }));
+    });
   }
 }
 
@@ -1792,6 +1804,12 @@ function renderDashboardPanels(){
   if(!out) return;
   const model=buildCutoffModel(out);
   ensureSelectedSheetItem(model);
+  if(!(model.rows||[]).length){
+    document.getElementById('insights').innerHTML=`<span class="insight-chip alert">No hay items en el filtro actual. Quite el filtro lasso para ver el tablero completo.</span>`;
+    document.getElementById('dashTable').innerHTML='';
+    destroyDashboardCharts();
+    return;
+  }
 
   const k=calcKpis(out, model);
     document.getElementById('kpi').innerHTML=`
