@@ -1749,18 +1749,22 @@ function renderMovements(){
 
   function colorFromItemCode(code){
     const PALETTE=[
-      {border:'#0b7fab', bgSoft:'#e9f6fc', bgMid:'#d7eef9', bgStrong:'#c2e7f7'},
-      {border:'#2f9e70', bgSoft:'#e9f8f0', bgMid:'#d8f1e4', bgStrong:'#c2e9d6'},
-      {border:'#cf5a2f', bgSoft:'#fdf0ea', bgMid:'#f9e0d3', bgStrong:'#f5cfbb'},
-      {border:'#c08a12', bgSoft:'#fff8e6', bgMid:'#fdf0c9', bgStrong:'#fae5a9'},
-      {border:'#1f6f8b', bgSoft:'#eaf5f8', bgMid:'#d8ebf1', bgStrong:'#c5e0ea'},
-      {border:'#2a8f6a', bgSoft:'#eaf8f1', bgMid:'#d8f0e4', bgStrong:'#c5e8d7'},
-      {border:'#b5483f', bgSoft:'#fceeed', bgMid:'#f7dada', bgStrong:'#f1c5c3'},
-      {border:'#6b8e23', bgSoft:'#f2f8e8', bgMid:'#e6f0d4', bgStrong:'#d8e8be'},
-      {border:'#007f5f', bgSoft:'#e8f7f2', bgMid:'#d1efe4', bgStrong:'#b9e7d4'},
-      {border:'#3d7ea6', bgSoft:'#ebf4fa', bgMid:'#d9eaf5', bgStrong:'#c6dfef'},
-      {border:'#a26a2b', bgSoft:'#fbf2ea', bgMid:'#f4e2d1', bgStrong:'#ecd1b8'},
-      {border:'#4a8f3a', bgSoft:'#edf8ea', bgMid:'#ddf0d6', bgStrong:'#cde8c1'}
+      {border:'#d83a74', bgSoft:'#feeff5', bgMid:'#fdd8e8', bgStrong:'#fbc1dc'}, // rosa
+      {border:'#1f9d5a', bgSoft:'#eafaf1', bgMid:'#cff3df', bgStrong:'#b3ebcd'}, // verde
+      {border:'#1f78d1', bgSoft:'#ebf4ff', bgMid:'#d1e6ff', bgStrong:'#b6d7ff'}, // azul
+      {border:'#f06a2a', bgSoft:'#fff3eb', bgMid:'#ffe0cd', bgStrong:'#ffceb0'}, // naranja
+      {border:'#7c4dff', bgSoft:'#f3efff', bgMid:'#e2d8ff', bgStrong:'#d1c0ff'}, // violeta
+      {border:'#009f9d', bgSoft:'#e8fbfb', bgMid:'#c8f3f2', bgStrong:'#a9eceb'}, // turquesa
+      {border:'#cc2f52', bgSoft:'#feeff2', bgMid:'#fcd4de', bgStrong:'#f9bacb'}, // frambuesa
+      {border:'#4f9a06', bgSoft:'#f2fae9', bgMid:'#e1f2cc', bgStrong:'#cfe9ae'}, // lima
+      {border:'#0067c8', bgSoft:'#eaf2ff', bgMid:'#cfe0ff', bgStrong:'#b2ceff'}, // azul fuerte
+      {border:'#e07a00', bgSoft:'#fff6ea', bgMid:'#ffe6c4', bgStrong:'#ffd69e'}, // ambar
+      {border:'#a83ee6', bgSoft:'#f7efff', bgMid:'#ebd5ff', bgStrong:'#debcff'}, // morado
+      {border:'#00a86b', bgSoft:'#e8fbf3', bgMid:'#caf3df', bgStrong:'#acecca'}, // esmeralda
+      {border:'#db3f8d', bgSoft:'#feeff7', bgMid:'#fdd6ea', bgStrong:'#fbbddc'}, // fucsia
+      {border:'#2d8bba', bgSoft:'#edf7fc', bgMid:'#d4eefa', bgStrong:'#bbe5f8'}, // celeste
+      {border:'#ff5b3a', bgSoft:'#fff1ed', bgMid:'#ffd9d0', bgStrong:'#ffc0b4'}, // coral
+      {border:'#2aa84a', bgSoft:'#ecfaef', bgMid:'#d3f3dc', bgStrong:'#b9ecc8'}  // verde hoja
     ];
     const s=String(code||'');
     let h=0;
