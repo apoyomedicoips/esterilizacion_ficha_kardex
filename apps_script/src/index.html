@@ -196,6 +196,65 @@
 
     .kpi .k-label { color: #4a6670; font-size: 0.82rem; margin: 0; }
     .kpi .k-value { font-size: 1.2rem; margin: 4px 0 0; font-weight: 800; color: #0f4d59; }
+    .kpi.emph {
+      background: linear-gradient(135deg, #0f6473 0%, #17859a 100%);
+      color: #fff;
+      border: none;
+    }
+    .kpi.emph .k-label { color: rgba(255,255,255,0.86); }
+    .kpi.emph .k-value { color: #fff; }
+
+    .insights {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 8px 0 12px;
+    }
+    .insight-chip {
+      border: 1px solid #c8dde3;
+      background: #f4fafc;
+      color: #2d5460;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+    .insight-chip.alert {
+      border-color: #efbeb0;
+      background: #fff1ec;
+      color: #8d351f;
+    }
+    .insight-chip.good {
+      border-color: #b8dec6;
+      background: #ebf8f0;
+      color: #0d6b3c;
+    }
+
+    .analytics-grid {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(280px, 1fr));
+      gap: 10px;
+    }
+    .chart-card {
+      border: 1px solid #d1e2e7;
+      border-radius: 12px;
+      padding: 10px;
+      background: linear-gradient(160deg, #ffffff 0%, #f6fbfd 100%);
+      min-height: 290px;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.6);
+    }
+    .chart-title {
+      margin: 0 0 8px;
+      font-size: 0.92rem;
+      color: #174f5b;
+      font-weight: 800;
+      letter-spacing: .2px;
+    }
+    .chart-wrap {
+      position: relative;
+      height: 240px;
+    }
 
     .grid {
       display: grid;
@@ -323,9 +382,11 @@
       .move-type { grid-template-columns: 1fr; }
       .summary { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
       .steps { grid-template-columns: 1fr; }
+      .analytics-grid { grid-template-columns: 1fr; }
       main { padding: 12px; }
     }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <header class="top">
@@ -352,7 +413,8 @@ const state = {
   bootstrap: null,
   dashboard: null,
   currentView: 'dashboard',
-  movementType: 'OUT'
+  movementType: 'OUT',
+  charts: []
 };
 
 const VIEW_LABELS = {
@@ -507,6 +569,7 @@ async function renderDashboard(){
       <p class="help">Aqui puede ver el saldo diario por item. Seleccione el mes para consultar.</p>
 
       <div class="summary" id="kpi"></div>
+      <div class="insights" id="insights"></div>
 
       <div class="inline">
         <div>
@@ -514,6 +577,25 @@ async function renderDashboard(){
           <input id="month" type="month" value="${monthDefault}"/>
         </div>
         <button id="loadBtn">Actualizar tablero</button>
+      </div>
+
+      <div class="analytics-grid" id="analyticsGrid">
+        <div class="chart-card">
+          <p class="chart-title">Distribucion del stock final por item</p>
+          <div class="chart-wrap"><canvas id="chartPie"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <p class="chart-title">Items con menor stock final</p>
+          <div class="chart-wrap"><canvas id="chartLow"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <p class="chart-title">Serie temporal: stock total del mes</p>
+          <div class="chart-wrap"><canvas id="chartSeries"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <p class="chart-title">Variacion mensual por item (final - inicio)</p>
+          <div class="chart-wrap"><canvas id="chartVar"></canvas></div>
+        </div>
       </div>
 
       <div id="dashTable" class="table" style="margin-top:12px"></div>
@@ -536,8 +618,114 @@ function calcKpis(out){
     items: out.rows.length,
     inicio: totalInicio,
     final: totalFinal,
-    criticos: bajo
+    criticos: bajo,
+    variacion: totalFinal-totalInicio
   };
+}
+
+function destroyDashboardCharts(){
+  if(!state.charts) state.charts=[];
+  state.charts.forEach(ch=>{ try{ ch.destroy(); }catch(_e){} });
+  state.charts=[];
+}
+
+function colorRamp(i){
+  const palette=['#0b5f6d','#1d8091','#2c9bb0','#62b8c8','#97d3dc','#f39a6b','#e66f51','#c44a3f','#7fb069','#4f8f5f','#8b7bd1','#aa8bd7'];
+  return palette[i%palette.length];
+}
+
+function buildDashboardAnalytics(out){
+  const rows=out.rows||[];
+  const days=out.days||[];
+  const totalByDay=days.map((_,idx)=> rows.reduce((acc,r)=>acc+Number(r.day_values?.[idx]||0),0));
+  const low=[...rows].sort((a,b)=>Number(a.end_balance||0)-Number(b.end_balance||0)).slice(0,10);
+  const varRows=[...rows].map(r=>({
+    code:r.item_code,
+    diff:Number(r.end_balance||0)-Number(r.start_balance||0)
+  })).sort((a,b)=>a.diff-b.diff);
+  const pieBase=[...rows].sort((a,b)=>Number(b.end_balance||0)-Number(a.end_balance||0));
+  const topPie=pieBase.slice(0,8);
+  const others=pieBase.slice(8).reduce((a,r)=>a+Number(r.end_balance||0),0);
+  const pieLabels=topPie.map(r=>r.item_code);
+  const pieValues=topPie.map(r=>Number(r.end_balance||0));
+  if(others>0){ pieLabels.push('OTROS'); pieValues.push(others); }
+  return {totalByDay,low,varRows,pieLabels,pieValues};
+}
+
+function renderDashboardCharts(out){
+  destroyDashboardCharts();
+  if(typeof Chart==='undefined') return;
+
+  const a=buildDashboardAnalytics(out);
+  const days=(out.days||[]).map(d=>String(d));
+
+  const pieCtx=document.getElementById('chartPie');
+  const lowCtx=document.getElementById('chartLow');
+  const seriesCtx=document.getElementById('chartSeries');
+  const varCtx=document.getElementById('chartVar');
+  if(!pieCtx||!lowCtx||!seriesCtx||!varCtx) return;
+
+  state.charts.push(new Chart(pieCtx,{
+    type:'pie',
+    data:{
+      labels:a.pieLabels,
+      datasets:[{ data:a.pieValues, backgroundColor:a.pieValues.map((_,i)=>colorRamp(i)), borderWidth:1 }]
+    },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } }
+  }));
+
+  state.charts.push(new Chart(lowCtx,{
+    type:'bar',
+    data:{
+      labels:a.low.map(r=>r.item_code),
+      datasets:[{
+        label:'Stock final',
+        data:a.low.map(r=>Number(r.end_balance||0)),
+        backgroundColor:a.low.map((_,i)=> i<3 ? '#e66f51' : '#2c9bb0')
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display:false } },
+      scales:{ x:{ ticks:{ maxRotation:0,minRotation:0 } }, y:{ beginAtZero:true } }
+    }
+  }));
+
+  state.charts.push(new Chart(seriesCtx,{
+    type:'line',
+    data:{
+      labels:days,
+      datasets:[{
+        label:'Stock total diario',
+        data:a.totalByDay,
+        fill:true,
+        borderColor:'#0b5f6d',
+        backgroundColor:'rgba(11,95,109,0.16)',
+        tension:.25,
+        pointRadius:2
+      }]
+    },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } } }
+  }));
+
+  const varLabels=a.varRows.map(r=>r.code);
+  const varData=a.varRows.map(r=>r.diff);
+  state.charts.push(new Chart(varCtx,{
+    type:'bar',
+    data:{
+      labels:varLabels,
+      datasets:[{
+        label:'Variacion',
+        data:varData,
+        backgroundColor:varData.map(v=>v>=0 ? '#2f9e70' : '#d9654b')
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display:false } },
+      scales:{ x:{ ticks:{ maxRotation:0,minRotation:0, autoSkip:true } }, y:{ beginAtZero:true } }
+    }
+  }));
 }
 
 async function loadDashboard(){
@@ -548,10 +736,18 @@ async function loadDashboard(){
 
     const k=calcKpis(out);
     document.getElementById('kpi').innerHTML=`
-      <div class="kpi"><p class="k-label">Items activos</p><p class="k-value">${k.items}</p></div>
+      <div class="kpi emph"><p class="k-label">Items activos</p><p class="k-value">${k.items}</p></div>
       <div class="kpi"><p class="k-label">Saldo total inicio</p><p class="k-value">${fmt(k.inicio)}</p></div>
       <div class="kpi"><p class="k-label">Saldo total final</p><p class="k-value">${fmt(k.final)}</p></div>
-      <div class="kpi"><p class="k-label">Items en cero</p><p class="k-value">${k.criticos}</p></div>`;
+      <div class="kpi"><p class="k-label">Items en cero</p><p class="k-value">${k.criticos}</p></div>
+      <div class="kpi"><p class="k-label">Variacion del mes</p><p class="k-value">${fmt(k.variacion)}</p></div>`;
+
+    const trendClass = k.variacion>=0 ? 'good' : 'alert';
+    const trendText = k.variacion>=0 ? 'El stock total subio este mes' : 'El stock total bajo este mes';
+    document.getElementById('insights').innerHTML=`
+      <span class="insight-chip ${trendClass}">${trendText}</span>
+      <span class="insight-chip">Top criticidad: ${k.criticos} item(s) en cero</span>
+      <span class="insight-chip">Periodo analizado: ${out.month}</span>`;
 
     const head=['<th>Item</th><th>Descripcion</th><th>Inicio</th>'];
     out.days.forEach(d=>head.push(`<th>${d}</th>`));
@@ -569,6 +765,7 @@ async function loadDashboard(){
     }).join('');
 
     document.getElementById('dashTable').innerHTML=`<table><thead><tr>${head.join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+    renderDashboardCharts(out);
   }catch(e){ showMsg(e); }
 }
 
