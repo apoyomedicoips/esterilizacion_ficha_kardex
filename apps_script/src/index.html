@@ -1748,14 +1748,29 @@ function renderMovements(){
   }
 
   function colorFromItemCode(code){
+    const PALETTE=[
+      {border:'#0b7fab', bgSoft:'#e9f6fc', bgMid:'#d7eef9', bgStrong:'#c2e7f7'},
+      {border:'#2f9e70', bgSoft:'#e9f8f0', bgMid:'#d8f1e4', bgStrong:'#c2e9d6'},
+      {border:'#cf5a2f', bgSoft:'#fdf0ea', bgMid:'#f9e0d3', bgStrong:'#f5cfbb'},
+      {border:'#c08a12', bgSoft:'#fff8e6', bgMid:'#fdf0c9', bgStrong:'#fae5a9'},
+      {border:'#1f6f8b', bgSoft:'#eaf5f8', bgMid:'#d8ebf1', bgStrong:'#c5e0ea'},
+      {border:'#2a8f6a', bgSoft:'#eaf8f1', bgMid:'#d8f0e4', bgStrong:'#c5e8d7'},
+      {border:'#b5483f', bgSoft:'#fceeed', bgMid:'#f7dada', bgStrong:'#f1c5c3'},
+      {border:'#6b8e23', bgSoft:'#f2f8e8', bgMid:'#e6f0d4', bgStrong:'#d8e8be'},
+      {border:'#007f5f', bgSoft:'#e8f7f2', bgMid:'#d1efe4', bgStrong:'#b9e7d4'},
+      {border:'#3d7ea6', bgSoft:'#ebf4fa', bgMid:'#d9eaf5', bgStrong:'#c6dfef'},
+      {border:'#a26a2b', bgSoft:'#fbf2ea', bgMid:'#f4e2d1', bgStrong:'#ecd1b8'},
+      {border:'#4a8f3a', bgSoft:'#edf8ea', bgMid:'#ddf0d6', bgStrong:'#cde8c1'}
+    ];
     const s=String(code||'');
     let h=0;
-    for(let i=0;i<s.length;i++) h=(h*33 + s.charCodeAt(i)) % 360;
+    for(let i=0;i<s.length;i++) h=(h*131 + s.charCodeAt(i)) >>> 0;
+    const base=PALETTE[h % PALETTE.length];
     return {
-      border:`hsl(${h}, 62%, 44%)`,
-      bgSoft:`hsl(${h}, 80%, 97%)`,
-      bgMid:`hsl(${h}, 78%, 94%)`,
-      bgStrong:`hsl(${h}, 72%, 90%)`
+      border:base.border,
+      bgSoft:base.bgSoft,
+      bgMid:base.bgMid,
+      bgStrong:base.bgStrong
     };
   }
 
