@@ -255,6 +255,64 @@
       position: relative;
       height: 240px;
     }
+    .semaforo-box {
+      margin-top: 12px;
+      border: 1px solid #d2e2e7;
+      border-radius: 12px;
+      padding: 10px;
+      background: linear-gradient(160deg,#ffffff 0%,#f7fbfd 100%);
+    }
+    .semaforo-head {
+      display: flex;
+      gap: 10px;
+      align-items: end;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .semaforo-head .field { min-width: 140px; }
+    .semaforo-head input { max-width: 130px; }
+    .semaforo-kpis {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(120px, 1fr));
+      gap: 8px;
+      margin: 8px 0 10px;
+    }
+    .traffic {
+      border-radius: 10px;
+      padding: 8px 10px;
+      border: 1px solid transparent;
+      font-weight: 800;
+      font-size: 0.9rem;
+    }
+    .traffic.red { background: #ffeceb; border-color: #f2b6b0; color: #9e2f28; }
+    .traffic.yellow { background: #fff9e8; border-color: #f3df9e; color: #7f610b; }
+    .traffic.green { background: #ecf8ef; border-color: #bee1c7; color: #1d6f3e; }
+    .semaforo-pills {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .pill {
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      border: 1px solid #cddfe5;
+      background: #f8fcfd;
+      color: #335861;
+    }
+    .badge {
+      display: inline-block;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 800;
+      padding: 3px 8px;
+      border: 1px solid transparent;
+    }
+    .badge.red { background:#ffeceb; color:#9e2f28; border-color:#efb9b3; }
+    .badge.yellow { background:#fff9e8; color:#7f610b; border-color:#efdca0; }
+    .badge.green { background:#ecf8ef; color:#1d6f3e; border-color:#bfdcc8; }
 
     .grid {
       display: grid;
@@ -414,7 +472,11 @@ const state = {
   dashboard: null,
   currentView: 'dashboard',
   movementType: 'OUT',
-  charts: []
+  charts: [],
+  semaforo: {
+    rojo: Number(localStorage.getItem('kardex_sem_rojo') || 50),
+    amarillo: Number(localStorage.getItem('kardex_sem_amarillo') || 150)
+  }
 };
 
 const VIEW_LABELS = {
@@ -598,8 +660,49 @@ async function renderDashboard(){
         </div>
       </div>
 
+      <div class="semaforo-box">
+        <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">Semaforo clinico de reposicion</h3>
+        <p class="help" style="margin-bottom:8px">Clasifica cada item por stock final para priorizar reposicion (rojo primero).</p>
+        <div class="semaforo-head">
+          <div class="field">
+            <label style="margin-top:0">Umbral rojo (critico)</label>
+            <input id="semRojo" type="number" min="0" step="1" />
+          </div>
+          <div class="field">
+            <label style="margin-top:0">Umbral amarillo (alerta)</label>
+            <input id="semAmarillo" type="number" min="0" step="1" />
+          </div>
+          <button id="semApply" style="width:auto">Aplicar semaforo</button>
+          <button id="semReset" style="width:auto;background:#5b7480">Restablecer</button>
+        </div>
+        <div id="semKpis" class="semaforo-kpis"></div>
+        <div id="semPills" class="semaforo-pills"></div>
+        <div id="semTable" class="table"></div>
+      </div>
+
       <div id="dashTable" class="table" style="margin-top:12px"></div>
     </section>`;
+
+  document.getElementById('semRojo').value = state.semaforo.rojo;
+  document.getElementById('semAmarillo').value = state.semaforo.amarillo;
+  document.getElementById('semApply').onclick=()=>{
+    const rojo=Math.max(0,Number(document.getElementById('semRojo').value||0));
+    const amarillo=Math.max(0,Number(document.getElementById('semAmarillo').value||0));
+    if(amarillo<rojo){ showMsg('El umbral amarillo debe ser mayor o igual al rojo.'); return; }
+    state.semaforo.rojo=rojo;
+    state.semaforo.amarillo=amarillo;
+    localStorage.setItem('kardex_sem_rojo',String(rojo));
+    localStorage.setItem('kardex_sem_amarillo',String(amarillo));
+    if(state.dashboard) renderSemaforo(state.dashboard);
+  };
+  document.getElementById('semReset').onclick=()=>{
+    state.semaforo={rojo:50, amarillo:150};
+    document.getElementById('semRojo').value=50;
+    document.getElementById('semAmarillo').value=150;
+    localStorage.setItem('kardex_sem_rojo','50');
+    localStorage.setItem('kardex_sem_amarillo','150');
+    if(state.dashboard) renderSemaforo(state.dashboard);
+  };
 
   document.getElementById('loadBtn').onclick=async()=>{ await loadDashboard(); };
   await loadDashboard();
@@ -728,6 +831,75 @@ function renderDashboardCharts(out){
   }));
 }
 
+function semaforoLevel(v, rojo, amarillo){
+  const n=Number(v||0);
+  if(n<=rojo) return 'red';
+  if(n<=amarillo) return 'yellow';
+  return 'green';
+}
+
+function semaforoLabel(level){
+  if(level==='red') return 'Rojo';
+  if(level==='yellow') return 'Amarillo';
+  return 'Verde';
+}
+
+function renderSemaforo(out){
+  const rojo=Number(state.semaforo.rojo||0);
+  const amarillo=Number(state.semaforo.amarillo||0);
+  const rows=(out.rows||[]).map(r=>{
+    const end=Number(r.end_balance||0);
+    const start=Number(r.start_balance||0);
+    const diff=end-start;
+    const level=semaforoLevel(end,rojo,amarillo);
+    return { code:r.item_code, name:r.item_name, end, start, diff, level };
+  });
+
+  const order={'red':0,'yellow':1,'green':2};
+  rows.sort((a,b)=> order[a.level]-order[b.level] || a.end-b.end || String(a.code).localeCompare(String(b.code)));
+
+  const countRed=rows.filter(r=>r.level==='red').length;
+  const countYellow=rows.filter(r=>r.level==='yellow').length;
+  const countGreen=rows.filter(r=>r.level==='green').length;
+  const avgEnd=rows.length ? rows.reduce((a,r)=>a+r.end,0)/rows.length : 0;
+
+  document.getElementById('semKpis').innerHTML=`
+    <div class="traffic red">Rojo: ${countRed}</div>
+    <div class="traffic yellow">Amarillo: ${countYellow}</div>
+    <div class="traffic green">Verde: ${countGreen}</div>`;
+
+  const criticalTop=rows.filter(r=>r.level==='red').slice(0,5).map(r=>`${r.code} (${fmt(r.end)})`);
+  document.getElementById('semPills').innerHTML=`
+    <span class="pill">Umbrales: rojo ≤ ${fmt(rojo)} | amarillo ≤ ${fmt(amarillo)}</span>
+    <span class="pill">Stock final promedio: ${fmt(Math.round(avgEnd))}</span>
+    ${criticalTop.length?`<span class="pill" style="border-color:#efb9b3;background:#ffeceb;color:#902f27">Criticos: ${criticalTop.join(', ')}</span>`:''}`;
+
+  document.getElementById('semTable').innerHTML=`
+    <table>
+      <thead>
+        <tr>
+          <th>Prioridad</th>
+          <th>Item</th>
+          <th>Descripcion</th>
+          <th>Saldo final</th>
+          <th>Variacion mes</th>
+          <th>Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((r,i)=>`
+          <tr>
+            <td>${i+1}</td>
+            <td><strong>${esc(r.code)}</strong></td>
+            <td>${esc(r.name)}</td>
+            <td>${fmt(r.end)}</td>
+            <td>${fmt(r.diff)}</td>
+            <td><span class="badge ${r.level}">${semaforoLabel(r.level)}</span></td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
 async function loadDashboard(){
   try{
     const month=document.getElementById('month').value;
@@ -766,6 +938,7 @@ async function loadDashboard(){
 
     document.getElementById('dashTable').innerHTML=`<table><thead><tr>${head.join('')}</tr></thead><tbody>${rows}</tbody></table>`;
     renderDashboardCharts(out);
+    renderSemaforo(out);
   }catch(e){ showMsg(e); }
 }
 
