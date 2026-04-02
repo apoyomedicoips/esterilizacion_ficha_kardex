@@ -208,8 +208,11 @@ function getMonthlyClosure(payload) {
   requireSession_(token, ['admin', 'operator', 'viewer']);
 
   const monthInput = String((payload && payload.month) || '').trim();
-  const cutoffInput = Number((payload && payload.cutoff_day) || 0);
   const parsedInput = parseMonth_(monthInput);
+  const monthKeyInput = Utilities.formatDate(new Date(parsedInput.year, parsedInput.month - 1, 1), Session.getScriptTimeZone(), 'yyyy-MM');
+  const cacheKey = 'CLOSURE_V2_' + monthKeyInput + '_' + getMovementsFingerprint_();
+  const cached = CacheService.getScriptCache().get(cacheKey);
+  if (cached) return JSON.parse(cached);
 
   const items = listItems_().filter((i) => i.active);
   const rawMovements = listMovementsRaw_();
@@ -243,11 +246,9 @@ function getMonthlyClosure(payload) {
   const firstDay = new Date(effectiveYear, effectiveMonth - 1, 1);
   const lastDay = new Date(effectiveYear, effectiveMonth, 0);
   const daysInMonth = lastDay.getDate();
-  const cutoffDay = cutoffInput >= 1 && cutoffInput <= daysInMonth ? cutoffInput : daysInMonth;
-  const cutoffDate = new Date(effectiveYear, effectiveMonth - 1, cutoffDay);
 
   const netBefore = {};
-  const monthAgg = {};
+  const monthDaily = {};
   let movementCount = 0;
 
   parsedMovements.forEach((m) => {
@@ -257,28 +258,39 @@ function getMonthlyClosure(payload) {
       return;
     }
 
-    if (m.md > cutoffDate) return;
+    if (m.md > lastDay) return;
     if (m.monthKey !== effectiveMonthKey) return;
 
-    if (!monthAgg[m.itemCode]) monthAgg[m.itemCode] = { in_qty: 0, out_qty: 0 };
-    if (m.moveType === 'IN') monthAgg[m.itemCode].in_qty += m.qty;
-    if (m.moveType === 'OUT') monthAgg[m.itemCode].out_qty += m.qty;
+    if (!monthDaily[m.itemCode]) {
+      monthDaily[m.itemCode] = { in_by_day: [], out_by_day: [] };
+      for (let i = 0; i < daysInMonth; i++) {
+        monthDaily[m.itemCode].in_by_day[i] = 0;
+        monthDaily[m.itemCode].out_by_day[i] = 0;
+      }
+    }
+    const dayIdx = m.md.getDate() - 1;
+    if (dayIdx < 0 || dayIdx >= daysInMonth) return;
+    if (m.moveType === 'IN') monthDaily[m.itemCode].in_by_day[dayIdx] += m.qty;
+    if (m.moveType === 'OUT') monthDaily[m.itemCode].out_by_day[dayIdx] += m.qty;
     movementCount += 1;
   });
 
   const rows = items.map((item) => {
     const code = item.item_code;
     const startBalance = Number(item.initial_stock || 0) + Number(netBefore[code] || 0);
-    const inQty = Number((monthAgg[code] && monthAgg[code].in_qty) || 0);
-    const outQty = Number((monthAgg[code] && monthAgg[code].out_qty) || 0);
-    const endBalance = startBalance + inQty - outQty;
+    const daily = monthDaily[code] || { in_by_day: [], out_by_day: [] };
+    const inByDay = daily.in_by_day.length ? daily.in_by_day : fillZeros_(daysInMonth);
+    const outByDay = daily.out_by_day.length ? daily.out_by_day : fillZeros_(daysInMonth);
+    const totalIn = inByDay.reduce((a, b) => a + Number(b || 0), 0);
+    const totalOut = outByDay.reduce((a, b) => a + Number(b || 0), 0);
+    const endBalanceMonth = startBalance + totalIn - totalOut;
     return {
       item_code: code,
       item_name: item.item_name,
-      stock_inicial: startBalance,
-      entradas: inQty,
-      salidas: outQty,
-      saldo_final: endBalance
+      stock_inicial_mes: startBalance,
+      in_by_day: inByDay,
+      out_by_day: outByDay,
+      saldo_fin_mes: endBalanceMonth
     };
   });
 
@@ -293,24 +305,15 @@ function getMonthlyClosure(payload) {
     return String(a.item_code).localeCompare(String(b.item_code));
   });
 
-  const totals = rows.reduce((acc, r) => {
-    acc.stock_inicial += Number(r.stock_inicial || 0);
-    acc.entradas += Number(r.entradas || 0);
-    acc.salidas += Number(r.salidas || 0);
-    acc.saldo_final += Number(r.saldo_final || 0);
-    return acc;
-  }, { stock_inicial: 0, entradas: 0, salidas: 0, saldo_final: 0 });
-
-  return {
+  const out = {
     month: effectiveMonthKey,
-    cutoff_day: cutoffDay,
-    cutoff_label: effectiveMonthKey + '-' + (cutoffDay < 10 ? '0' : '') + cutoffDay,
     days_in_month: daysInMonth,
     movement_count: movementCount,
     rows: rows,
-    totals: totals,
     auto_switched_month: effectiveMonthKey !== monthInput && !!latestMonthKey
   };
+  CacheService.getScriptCache().put(cacheKey, JSON.stringify(out), 300);
+  return out;
 }
 
 function createMovement(payload) {
@@ -501,6 +504,20 @@ function listMovementsRaw_() {
     move_type: String(r.move_type || 'OUT').toUpperCase(),
     quantity: Number(r.quantity || 0)
   }));
+}
+
+function getMovementsFingerprint_() {
+  const ws = getSheet_(SHEETS.MOVEMENTS.name, SHEETS.MOVEMENTS.headers);
+  const lastRow = ws.getLastRow();
+  if (lastRow < 2) return '0';
+  const row = ws.getRange(lastRow, 1, 1, SHEETS.MOVEMENTS.headers.length).getValues()[0];
+  return String(lastRow) + '|' + String(row[0] || '') + '|' + String(row[1] || '') + '|' + String(row[9] || '');
+}
+
+function fillZeros_(n) {
+  const out = [];
+  for (let i = 0; i < n; i++) out[i] = 0;
+  return out;
 }
 
 function listAudit_(limit) {

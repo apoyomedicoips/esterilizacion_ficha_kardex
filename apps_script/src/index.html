@@ -1020,7 +1020,7 @@ async function renderClosure(){
   document.getElementById('c_cutoffDay').onchange=()=>{
     state.cutoffDay = Number(document.getElementById('c_cutoffDay').value || 0);
     localStorage.setItem('kardex_cutoff_day', String(state.cutoffDay || 0));
-    loadClosureData();
+    renderClosureTable();
   };
   document.getElementById('c_loadBtn').onclick=async()=>{ await loadClosureData(); };
   document.getElementById('exportExcelBtn').onclick=()=>{ exportClosureExcel(); };
@@ -1051,11 +1051,48 @@ function findLatestMonthWithData(recentRows){
 
 function getClosureData(raw){
   if(!raw) return null;
-  if(raw.rows && raw.totals && raw.cutoff_label){
+  if(raw.rows && raw.days_in_month){
+    const dmax=Number(raw.days_in_month||0);
+    let cutoffDay=Number(state.cutoffDay||0);
+    if(!cutoffDay || cutoffDay<1 || cutoffDay>dmax) cutoffDay=dmax;
+    const rows=(raw.rows||[]).map(r=>{
+      let entradas=0, salidas=0;
+      const inByDay=(r.in_by_day||[]);
+      const outByDay=(r.out_by_day||[]);
+      for(let i=0;i<cutoffDay;i++){
+        entradas += Number(inByDay[i]||0);
+        salidas += Number(outByDay[i]||0);
+      }
+      const stockInicial=Number(r.stock_inicial_mes||0);
+      return {
+        item_code: r.item_code,
+        item_name: r.item_name,
+        stock_inicial: stockInicial,
+        entradas: entradas,
+        salidas: salidas,
+        saldo_final: stockInicial + entradas - salidas
+      };
+    });
+    rows.sort((a,b)=>{
+      const an=Number(a.item_code), bn=Number(b.item_code);
+      const aNum=Number.isFinite(an) && String(a.item_code).trim()!=='';
+      const bNum=Number.isFinite(bn) && String(b.item_code).trim()!=='';
+      if(aNum && bNum) return an-bn;
+      if(aNum) return -1;
+      if(bNum) return 1;
+      return String(a.item_code).localeCompare(String(b.item_code));
+    });
+    const totals=rows.reduce((acc,r)=>{
+      acc.stock_inicial += r.stock_inicial;
+      acc.entradas += r.entradas;
+      acc.salidas += r.salidas;
+      acc.saldo_final += r.saldo_final;
+      return acc;
+    },{stock_inicial:0,entradas:0,salidas:0,saldo_final:0});
     return {
-      model: { cutoffLabel: raw.cutoff_label },
-      rows: raw.rows,
-      totals: raw.totals,
+      model: { cutoffLabel: `${raw.month}-${pad2(cutoffDay)}` },
+      rows: rows,
+      totals: totals,
       movement_count: Number(raw.movement_count || 0)
     };
   }
@@ -1091,10 +1128,8 @@ function getClosureData(raw){
 async function loadClosureData(){
   try{
     const monthInput=document.getElementById('c_month');
-    const cutoffSel=document.getElementById('c_cutoffDay');
     const selectedMonth=monthInput.value;
-    const cutoffDay=Number((cutoffSel && cutoffSel.value) || state.cutoffDay || 0);
-    const out=await safeServer('getMonthlyClosure',{token:state.token,month:selectedMonth,cutoff_day:cutoffDay});
+    const out=await safeServer('getMonthlyClosure',{token:state.token,month:selectedMonth});
     if(out && out.month && monthInput.value!==out.month){
       monthInput.value=out.month;
       if(out.auto_switched_month){
@@ -1106,11 +1141,6 @@ async function loadClosureData(){
     const days=[];
     for(let d=1; d<=dmax; d++) days.push(d);
     syncCutoffSelector(days, 'c_cutoffDay');
-    if(out && out.cutoff_day){
-      document.getElementById('c_cutoffDay').value=String(out.cutoff_day);
-      state.cutoffDay=Number(out.cutoff_day);
-      localStorage.setItem('kardex_cutoff_day', String(state.cutoffDay || 0));
-    }
     renderClosureTable();
   }catch(e){ showMsg(e); }
 }
