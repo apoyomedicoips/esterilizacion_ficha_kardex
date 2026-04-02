@@ -203,6 +203,116 @@ function getDashboard(payload) {
   };
 }
 
+function getMonthlyClosure(payload) {
+  const token = payload && payload.token;
+  requireSession_(token, ['admin', 'operator', 'viewer']);
+
+  const monthInput = String((payload && payload.month) || '').trim();
+  const cutoffInput = Number((payload && payload.cutoff_day) || 0);
+  const parsedInput = parseMonth_(monthInput);
+
+  const items = listItems_().filter((i) => i.active);
+  const rawMovements = listMovementsRaw_();
+  const parsedMovements = [];
+  let latestMonthKey = '';
+
+  rawMovements.forEach((m) => {
+    const md = parseDateSafe_(m.movement_date);
+    if (!md) return;
+    const itemCode = String(m.item_code || '').trim();
+    const qty = Number(m.quantity || 0);
+    const moveType = String(m.move_type || '').toUpperCase();
+    if (!itemCode || !qty || !(moveType === 'IN' || moveType === 'OUT')) return;
+
+    const monthKey = Utilities.formatDate(md, Session.getScriptTimeZone(), 'yyyy-MM');
+    if (monthKey > latestMonthKey) latestMonthKey = monthKey;
+    parsedMovements.push({ md, monthKey, itemCode, moveType, qty });
+  });
+
+  let effectiveYear = parsedInput.year;
+  let effectiveMonth = parsedInput.month;
+  let effectiveMonthKey = Utilities.formatDate(new Date(effectiveYear, effectiveMonth - 1, 1), Session.getScriptTimeZone(), 'yyyy-MM');
+
+  const hasInSelectedMonth = parsedMovements.some((m) => m.monthKey === effectiveMonthKey);
+  if (!hasInSelectedMonth && latestMonthKey) {
+    effectiveYear = Number(latestMonthKey.slice(0, 4));
+    effectiveMonth = Number(latestMonthKey.slice(5, 7));
+    effectiveMonthKey = latestMonthKey;
+  }
+
+  const firstDay = new Date(effectiveYear, effectiveMonth - 1, 1);
+  const lastDay = new Date(effectiveYear, effectiveMonth, 0);
+  const daysInMonth = lastDay.getDate();
+  const cutoffDay = cutoffInput >= 1 && cutoffInput <= daysInMonth ? cutoffInput : daysInMonth;
+  const cutoffDate = new Date(effectiveYear, effectiveMonth - 1, cutoffDay);
+
+  const netBefore = {};
+  const monthAgg = {};
+  let movementCount = 0;
+
+  parsedMovements.forEach((m) => {
+    const sign = m.moveType === 'IN' ? 1 : -1;
+    if (m.md < firstDay) {
+      netBefore[m.itemCode] = (netBefore[m.itemCode] || 0) + sign * m.qty;
+      return;
+    }
+
+    if (m.md > cutoffDate) return;
+    if (m.monthKey !== effectiveMonthKey) return;
+
+    if (!monthAgg[m.itemCode]) monthAgg[m.itemCode] = { in_qty: 0, out_qty: 0 };
+    if (m.moveType === 'IN') monthAgg[m.itemCode].in_qty += m.qty;
+    if (m.moveType === 'OUT') monthAgg[m.itemCode].out_qty += m.qty;
+    movementCount += 1;
+  });
+
+  const rows = items.map((item) => {
+    const code = item.item_code;
+    const startBalance = Number(item.initial_stock || 0) + Number(netBefore[code] || 0);
+    const inQty = Number((monthAgg[code] && monthAgg[code].in_qty) || 0);
+    const outQty = Number((monthAgg[code] && monthAgg[code].out_qty) || 0);
+    const endBalance = startBalance + inQty - outQty;
+    return {
+      item_code: code,
+      item_name: item.item_name,
+      stock_inicial: startBalance,
+      entradas: inQty,
+      salidas: outQty,
+      saldo_final: endBalance
+    };
+  });
+
+  rows.sort((a, b) => {
+    const an = Number(a.item_code);
+    const bn = Number(b.item_code);
+    const aNum = Number.isFinite(an) && String(a.item_code).trim() !== '';
+    const bNum = Number.isFinite(bn) && String(b.item_code).trim() !== '';
+    if (aNum && bNum) return an - bn;
+    if (aNum) return -1;
+    if (bNum) return 1;
+    return String(a.item_code).localeCompare(String(b.item_code));
+  });
+
+  const totals = rows.reduce((acc, r) => {
+    acc.stock_inicial += Number(r.stock_inicial || 0);
+    acc.entradas += Number(r.entradas || 0);
+    acc.salidas += Number(r.salidas || 0);
+    acc.saldo_final += Number(r.saldo_final || 0);
+    return acc;
+  }, { stock_inicial: 0, entradas: 0, salidas: 0, saldo_final: 0 });
+
+  return {
+    month: effectiveMonthKey,
+    cutoff_day: cutoffDay,
+    cutoff_label: effectiveMonthKey + '-' + (cutoffDay < 10 ? '0' : '') + cutoffDay,
+    days_in_month: daysInMonth,
+    movement_count: movementCount,
+    rows: rows,
+    totals: totals,
+    auto_switched_month: effectiveMonthKey !== monthInput && !!latestMonthKey
+  };
+}
+
 function createMovement(payload) {
   const session = requireSession_(payload && payload.token, ['admin', 'operator']);
   const movementDate = String((payload && payload.movement_date) || '').trim();
@@ -382,6 +492,15 @@ function listMovements_() {
     username: String(r.username || ''),
     created_at: String(r.created_at || '')
   })).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+}
+
+function listMovementsRaw_() {
+  return getRowsAsObjects_(SHEETS.MOVEMENTS).map((r) => ({
+    movement_date: r.movement_date,
+    item_code: String(r.item_code || ''),
+    move_type: String(r.move_type || 'OUT').toUpperCase(),
+    quantity: Number(r.quantity || 0)
+  }));
 }
 
 function listAudit_(limit) {

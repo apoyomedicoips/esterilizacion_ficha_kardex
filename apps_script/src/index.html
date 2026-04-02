@@ -1020,7 +1020,7 @@ async function renderClosure(){
   document.getElementById('c_cutoffDay').onchange=()=>{
     state.cutoffDay = Number(document.getElementById('c_cutoffDay').value || 0);
     localStorage.setItem('kardex_cutoff_day', String(state.cutoffDay || 0));
-    renderClosureTable();
+    loadClosureData();
   };
   document.getElementById('c_loadBtn').onclick=async()=>{ await loadClosureData(); };
   document.getElementById('exportExcelBtn').onclick=()=>{ exportClosureExcel(); };
@@ -1051,6 +1051,14 @@ function findLatestMonthWithData(recentRows){
 
 function getClosureData(raw){
   if(!raw) return null;
+  if(raw.rows && raw.totals && raw.cutoff_label){
+    return {
+      model: { cutoffLabel: raw.cutoff_label },
+      rows: raw.rows,
+      totals: raw.totals,
+      movement_count: Number(raw.movement_count || 0)
+    };
+  }
   const model=buildCutoffModel(raw);
   const rows=((model && model.rows) || []).map(r=>({
     item_code: r.item_code,
@@ -1076,25 +1084,33 @@ function getClosureData(raw){
     acc.saldo_final += r.saldo_final;
     return acc;
   },{stock_inicial:0,entradas:0,salidas:0,saldo_final:0});
-  return { model, rows, totals };
+  const moveCount=((raw && raw.month_movements) || []).length;
+  return { model, rows, totals, movement_count: moveCount };
 }
 
 async function loadClosureData(){
   try{
     const monthInput=document.getElementById('c_month');
+    const cutoffSel=document.getElementById('c_cutoffDay');
     const selectedMonth=monthInput.value;
-    let out=await safeServer('getDashboard',{token:state.token,month:selectedMonth});
-    const hasRows=(out && out.month_movements && out.month_movements.length>0);
-    if(!hasRows){
-      const latestMonth=findLatestMonthWithData(out && out.recent);
-      if(latestMonth && latestMonth!==selectedMonth){
-        out=await safeServer('getDashboard',{token:state.token,month:latestMonth});
-        monthInput.value=latestMonth;
-        showMsg(`No hay movimientos en ${selectedMonth}. Se cargó automáticamente ${latestMonth}.`, true);
+    const cutoffDay=Number((cutoffSel && cutoffSel.value) || state.cutoffDay || 0);
+    const out=await safeServer('getMonthlyClosure',{token:state.token,month:selectedMonth,cutoff_day:cutoffDay});
+    if(out && out.month && monthInput.value!==out.month){
+      monthInput.value=out.month;
+      if(out.auto_switched_month){
+        showMsg(`No hay movimientos en ${selectedMonth}. Se cargó automáticamente ${out.month}.`, true);
       }
     }
     state.closureRaw=out;
-    syncCutoffSelector(out.days||[], 'c_cutoffDay');
+    const dmax=Number((out && out.days_in_month) || 0);
+    const days=[];
+    for(let d=1; d<=dmax; d++) days.push(d);
+    syncCutoffSelector(days, 'c_cutoffDay');
+    if(out && out.cutoff_day){
+      document.getElementById('c_cutoffDay').value=String(out.cutoff_day);
+      state.cutoffDay=Number(out.cutoff_day);
+      localStorage.setItem('kardex_cutoff_day', String(state.cutoffDay || 0));
+    }
     renderClosureTable();
   }catch(e){ showMsg(e); }
 }
@@ -1106,7 +1122,7 @@ function renderClosureTable(){
     return;
   }
   const parts=parseCutoffLabelParts(data.model.cutoffLabel);
-  const moveCount=((state.closureRaw && state.closureRaw.month_movements) || []).length;
+  const moveCount=Number(data.movement_count||0);
   document.getElementById('closureHeader').innerHTML=`
     <strong>HOSPITAL DE ESPECIALIDADES QUIRURGICAS - INGAVI</strong><br/>
     AREA DE ESTERILIZACION · CIERRE DEL MES<br/>
