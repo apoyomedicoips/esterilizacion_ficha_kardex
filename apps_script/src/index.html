@@ -1037,6 +1037,18 @@ function parseCutoffLabelParts(label){
   return { year:m[1], month:String(Number(m[2])), day:String(Number(m[3])) };
 }
 
+function findLatestMonthWithData(recentRows){
+  const rows=recentRows||[];
+  let best='';
+  rows.forEach(r=>{
+    const d=String((r && r.movement_date) || '');
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+    const m=d.slice(0,7);
+    if(m>best) best=m;
+  });
+  return best;
+}
+
 function getClosureData(raw){
   if(!raw) return null;
   const model=buildCutoffModel(raw);
@@ -1069,8 +1081,18 @@ function getClosureData(raw){
 
 async function loadClosureData(){
   try{
-    const month=document.getElementById('c_month').value;
-    const out=await safeServer('getDashboard',{token:state.token,month});
+    const monthInput=document.getElementById('c_month');
+    const selectedMonth=monthInput.value;
+    let out=await safeServer('getDashboard',{token:state.token,month:selectedMonth});
+    const hasRows=(out && out.month_movements && out.month_movements.length>0);
+    if(!hasRows){
+      const latestMonth=findLatestMonthWithData(out && out.recent);
+      if(latestMonth && latestMonth!==selectedMonth){
+        out=await safeServer('getDashboard',{token:state.token,month:latestMonth});
+        monthInput.value=latestMonth;
+        showMsg(`No hay movimientos en ${selectedMonth}. Se cargó automáticamente ${latestMonth}.`, true);
+      }
+    }
     state.closureRaw=out;
     syncCutoffSelector(out.days||[], 'c_cutoffDay');
     renderClosureTable();
@@ -1084,10 +1106,11 @@ function renderClosureTable(){
     return;
   }
   const parts=parseCutoffLabelParts(data.model.cutoffLabel);
+  const moveCount=((state.closureRaw && state.closureRaw.month_movements) || []).length;
   document.getElementById('closureHeader').innerHTML=`
     <strong>HOSPITAL DE ESPECIALIDADES QUIRURGICAS - INGAVI</strong><br/>
     AREA DE ESTERILIZACION · CIERRE DEL MES<br/>
-    MES: <strong>${parts.month}</strong> &nbsp; ANO: <strong>${parts.year}</strong> &nbsp; DIA: <strong>${parts.day}</strong>`;
+    MES: <strong>${parts.month}</strong> &nbsp; ANO: <strong>${parts.year}</strong> &nbsp; DIA: <strong>${parts.day}</strong> &nbsp; MOVIMIENTOS: <strong>${fmt(moveCount)}</strong>`;
 
   document.getElementById('closureTable').innerHTML=`
     <table>
@@ -1766,8 +1789,18 @@ function renderManagerPanel(out, model, k){
 
 async function loadDashboard(){
   try{
-    const month=document.getElementById('month').value;
-    const out=await safeServer('getDashboard',{token:state.token,month});
+    const monthInput=document.getElementById('month');
+    const selectedMonth=monthInput.value;
+    let out=await safeServer('getDashboard',{token:state.token,month:selectedMonth});
+    const hasRows=(out && out.month_movements && out.month_movements.length>0);
+    if(!hasRows){
+      const latestMonth=findLatestMonthWithData(out && out.recent);
+      if(latestMonth && latestMonth!==selectedMonth){
+        out=await safeServer('getDashboard',{token:state.token,month:latestMonth});
+        monthInput.value=latestMonth;
+        showMsg(`No hay movimientos en ${selectedMonth}. Se cargó automáticamente ${latestMonth}.`, true);
+      }
+    }
     state.dashboardRaw=out;
     state.dashboard=out;
     syncCutoffSelector(out.days||[]);
