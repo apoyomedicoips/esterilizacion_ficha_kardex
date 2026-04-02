@@ -372,7 +372,7 @@ function listServices_() {
 function listMovements_() {
   return getRowsAsObjects_(SHEETS.MOVEMENTS).map((r) => ({
     movement_id: String(r.movement_id || ''),
-    movement_date: String(r.movement_date || ''),
+    movement_date: normalizeDateValue_(r.movement_date),
     item_code: String(r.item_code || ''),
     service_name: String(r.service_name || ''),
     move_type: String(r.move_type || 'OUT').toUpperCase(),
@@ -493,9 +493,37 @@ function toBool_(v) {
 }
 
 function parseDateSafe_(s) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s || ''))) return null;
-  const [y, m, d] = String(s).split('-').map((x) => Number(x));
-  return new Date(y, m - 1, d);
+  if (s instanceof Date && !isNaN(s.getTime())) {
+    return new Date(s.getFullYear(), s.getMonth(), s.getDate());
+  }
+
+  const raw = String(s || '').trim();
+  if (!raw) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const [y, m, d] = raw.split('-').map((x) => Number(x));
+    return new Date(y, m - 1, d);
+  }
+
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(raw)) {
+    const [d, m, y] = raw.split('/').map((x) => Number(x));
+    return new Date(y, m - 1, d);
+  }
+
+  const parsed = new Date(raw);
+  if (!isNaN(parsed.getTime())) {
+    return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+  }
+  return null;
+}
+
+function normalizeDateValue_(v) {
+  if (v instanceof Date && !isNaN(v.getTime())) {
+    return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  const d = parseDateSafe_(v);
+  if (!d) return String(v || '').trim();
+  return Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd');
 }
 
 function parseMonth_(s) {
