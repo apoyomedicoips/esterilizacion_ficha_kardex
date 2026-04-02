@@ -655,6 +655,8 @@ const state = {
   movementType: 'OUT',
   charts: [],
   closureRaw: null,
+  closureMonth: '',
+  closureCache: {},
   semaforo: {
     rojo: Number(localStorage.getItem('kardex_sem_rojo') || 50),
     amarillo: Number(localStorage.getItem('kardex_sem_amarillo') || 150)
@@ -765,6 +767,7 @@ async function loadBootstrap(){
   const out=await safeServer('getBootstrap',state.token);
   state.bootstrap=out;
   state.user=out.user;
+  state.closureCache={};
 }
 
 function renderShell(){
@@ -993,7 +996,7 @@ async function renderDashboard(){
 
 async function renderClosure(){
   const app=document.getElementById('app');
-  const monthDefault=new Date().toISOString().slice(0,7);
+  const monthDefault=state.closureMonth || new Date().toISOString().slice(0,7);
   app.innerHTML=`
     <section class="card">
       <h2>${VIEW_LABELS.closure}</h2>
@@ -1022,10 +1025,10 @@ async function renderClosure(){
     localStorage.setItem('kardex_cutoff_day', String(state.cutoffDay || 0));
     renderClosureTable();
   };
-  document.getElementById('c_loadBtn').onclick=async()=>{ await loadClosureData(); };
+  document.getElementById('c_loadBtn').onclick=async()=>{ await loadClosureData(true); };
   document.getElementById('exportExcelBtn').onclick=()=>{ exportClosureExcel(); };
   document.getElementById('exportWordBtn').onclick=()=>{ exportClosureWord(); };
-  await loadClosureData();
+  await loadClosureData(false);
 }
 
 function pad2(n){ return String(Number(n||0)).padStart(2,'0'); }
@@ -1125,10 +1128,21 @@ function getClosureData(raw){
   return { model, rows, totals, movement_count: moveCount };
 }
 
-async function loadClosureData(){
+async function loadClosureData(forceReload){
   try{
     const monthInput=document.getElementById('c_month');
     const selectedMonth=monthInput.value;
+    if(!forceReload && state.closureCache[selectedMonth]){
+      state.closureRaw=state.closureCache[selectedMonth];
+      state.closureMonth=selectedMonth;
+      const cached=state.closureRaw;
+      const dmax=Number((cached && cached.days_in_month) || 0);
+      const days=[];
+      for(let d=1; d<=dmax; d++) days.push(d);
+      syncCutoffSelector(days, 'c_cutoffDay');
+      renderClosureTable();
+      return;
+    }
     const out=await safeServer('getMonthlyClosure',{token:state.token,month:selectedMonth});
     if(out && out.month && monthInput.value!==out.month){
       monthInput.value=out.month;
@@ -1137,6 +1151,10 @@ async function loadClosureData(){
       }
     }
     state.closureRaw=out;
+    state.closureMonth=out && out.month ? out.month : monthInput.value;
+    if(state.closureMonth){
+      state.closureCache[state.closureMonth]=out;
+    }
     const dmax=Number((out && out.days_in_month) || 0);
     const days=[];
     for(let d=1; d<=dmax; d++) days.push(d);
@@ -2172,6 +2190,7 @@ function renderMovements(){
       if(!payload.quantity || payload.quantity<=0){ showMsg('Ingrese una cantidad valida.'); return; }
 
       await safeServer('createMovement',payload);
+      state.closureCache={};
       showMsg('Movimiento guardado correctamente.',true);
 
       document.getElementById('m_qty').value='';
