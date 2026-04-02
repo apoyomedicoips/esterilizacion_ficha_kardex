@@ -447,16 +447,18 @@
       border: 1px solid #cddfe5;
       border-left: 8px solid #5f8a98;
       border-radius: 10px;
-      background: #f9fcfd;
+      background: #f5fafc;
       color: #204f5c;
       padding: 8px 9px;
       cursor: pointer;
+      transition: transform .05s ease, box-shadow .15s ease, filter .15s ease;
     }
     .movement-item.active {
       box-shadow: 0 0 0 2px rgba(16, 88, 100, 0.15) inset;
       border-color: #8cb9c5;
       background: #eef8fb;
     }
+    .movement-item:hover { filter: brightness(0.99); }
     .movement-item .main {
       display: flex;
       justify-content: space-between;
@@ -1749,7 +1751,12 @@ function renderMovements(){
     const s=String(code||'');
     let h=0;
     for(let i=0;i<s.length;i++) h=(h*33 + s.charCodeAt(i)) % 360;
-    return { border:`hsl(${h}, 58%, 45%)`, bg:`hsl(${h}, 72%, 96%)` };
+    return {
+      border:`hsl(${h}, 62%, 44%)`,
+      bgSoft:`hsl(${h}, 80%, 97%)`,
+      bgMid:`hsl(${h}, 78%, 94%)`,
+      bgStrong:`hsl(${h}, 72%, 90%)`
+    };
   }
 
   function applyMovementVisuals(){
@@ -1770,13 +1777,14 @@ function renderMovements(){
     const itemObj=itemMap[code];
     if(content){
       content.style.setProperty('--item-accent', c.border);
-      content.style.setProperty('--item-soft', c.bg);
+      content.style.setProperty('--item-soft', c.bgMid);
       content.style.borderColor = c.border;
+      content.style.background = `linear-gradient(165deg, rgba(255,255,255,0.98) 0%, ${c.bgMid} 100%)`;
     }
     if(hint){
       hint.textContent = `Item activo: ${code}${itemObj ? ' - ' + itemObj.item_name : ''}`;
       hint.style.borderColor = c.border;
-      hint.style.background = c.bg;
+      hint.style.background = c.bgStrong;
       hint.style.color = '#1f4f5b';
     }
     if(help){
@@ -1788,6 +1796,11 @@ function renderMovements(){
       save.textContent = type==='OUT' ? 'Registrar salida' : 'Registrar entrada';
       save.style.background = type==='OUT' ? '#a23a1d' : '#0a7a55';
     }
+    const fields=[...document.querySelectorAll('#movementContent input, #movementContent select, #movementContent textarea')];
+    fields.forEach(el=>{
+      el.style.borderColor = c.border;
+      el.style.boxShadow = `inset 0 0 0 1px ${c.bgSoft}`;
+    });
   }
 
   function renderMovementItemList(){
@@ -1802,7 +1815,7 @@ function renderMovements(){
     host.innerHTML=filtered.map(i=>{
       const active=String(i.item_code)===String(itemSelect.value);
       const c=colorFromItemCode(i.item_code);
-      return `<button class="movement-item ${active?'active':''}" data-code="${escAttr(i.item_code)}" style="border-left-color:${c.border};background:${active?c.bg:'#f9fcfd'}">
+      return `<button class="movement-item ${active?'active':''}" data-code="${escAttr(i.item_code)}" style="border-left-color:${c.border};border-color:${active?c.border:'#cddfe5'};background:${active?c.bgStrong:c.bgSoft}">
         <div class="main"><span>${esc(i.item_code)}</span></div>
         <div class="sub">${esc(i.item_name)}</div>
       </button>`;
