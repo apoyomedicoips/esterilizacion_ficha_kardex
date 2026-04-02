@@ -210,12 +210,18 @@ function getMonthlyClosure(payload) {
   const monthInput = String((payload && payload.month) || '').trim();
   const parsedInput = parseMonth_(monthInput);
   const monthKeyInput = Utilities.formatDate(new Date(parsedInput.year, parsedInput.month - 1, 1), Session.getScriptTimeZone(), 'yyyy-MM');
-  const cacheKey = 'CLOSURE_V2_' + monthKeyInput + '_' + getMovementsFingerprint_();
+  const fingerprint = getMovementsFingerprint_();
+  const cacheKey = 'CLOSURE_V3_' + monthKeyInput + '_' + fingerprint;
   const cached = CacheService.getScriptCache().get(cacheKey);
   if (cached) return JSON.parse(cached);
+  const persisted = getPersistedClosureCache_(cacheKey);
+  if (persisted) {
+    CacheService.getScriptCache().put(cacheKey, JSON.stringify(persisted), 300);
+    return persisted;
+  }
 
   const items = listItems_().filter((i) => i.active);
-  const rawMovements = listMovementsRaw_();
+  const rawMovements = getMovementsFastRows_();
   const parsedMovements = [];
   let latestMonthKey = '';
 
@@ -313,6 +319,7 @@ function getMonthlyClosure(payload) {
     auto_switched_month: effectiveMonthKey !== monthInput && !!latestMonthKey
   };
   CacheService.getScriptCache().put(cacheKey, JSON.stringify(out), 300);
+  setPersistedClosureCache_(cacheKey, out);
   return out;
 }
 
@@ -506,6 +513,32 @@ function listMovementsRaw_() {
   }));
 }
 
+function getMovementsFastRows_() {
+  const ws = getSheet_(SHEETS.MOVEMENTS.name, SHEETS.MOVEMENTS.headers);
+  const lastRow = ws.getLastRow();
+  if (lastRow < 2) return [];
+
+  // Columns: B movement_date, C item_code, E move_type, F quantity
+  const values = ws.getRange(2, 2, lastRow - 1, 5).getValues();
+  const out = [];
+  for (let i = 0; i < values.length; i++) {
+    const r = values[i];
+    const movementDate = r[0];
+    const itemCode = String(r[1] || '').trim();
+    const moveType = String(r[3] || '').toUpperCase();
+    const qty = Number(r[4] || 0);
+    if (!itemCode || !qty) continue;
+    if (!(moveType === 'IN' || moveType === 'OUT')) continue;
+    out.push({
+      movement_date: movementDate,
+      item_code: itemCode,
+      move_type: moveType,
+      quantity: qty
+    });
+  }
+  return out;
+}
+
 function getMovementsFingerprint_() {
   const ws = getSheet_(SHEETS.MOVEMENTS.name, SHEETS.MOVEMENTS.headers);
   const lastRow = ws.getLastRow();
@@ -518,6 +551,26 @@ function fillZeros_(n) {
   const out = [];
   for (let i = 0; i < n; i++) out[i] = 0;
   return out;
+}
+
+function getPersistedClosureCache_(key) {
+  const props = PropertiesService.getScriptProperties();
+  const raw = props.getProperty('PERSIST_' + key);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (_e) {
+    return null;
+  }
+}
+
+function setPersistedClosureCache_(key, value) {
+  const props = PropertiesService.getScriptProperties();
+  try {
+    props.setProperty('PERSIST_' + key, JSON.stringify(value));
+  } catch (_e) {
+    // Ignore if size limit is reached.
+  }
 }
 
 function listAudit_(limit) {
