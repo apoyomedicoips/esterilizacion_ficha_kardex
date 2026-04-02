@@ -648,6 +648,8 @@ const state = {
   bootstrap: null,
   dashboard: null,
   dashboardRaw: null,
+  dashboardMonth: localStorage.getItem('kardex_dash_month') || '',
+  dashboardMonthCache: {},
   selectedItems: null,
   selectedSheetItem: localStorage.getItem('kardex_selected_item') || '',
   cutoffDay: Number(localStorage.getItem('kardex_cutoff_day') || 0),
@@ -791,6 +793,8 @@ function renderShell(){
     addMenuBtn(menu,'Inicializar','init',async()=>{
       try{
         await safeServer('initSchema',{token:state.token});
+        invalidateDashboardClientCache();
+        state.closureCache={};
         showMsg('Hojas inicializadas correctamente.',true);
         await loadBootstrap();
       }catch(e){ showMsg(e); }
@@ -816,7 +820,7 @@ function addMenuBtn(menu,label,view,cb){
 
 async function renderDashboard(){
   const app=document.getElementById('app');
-  const monthDefault=new Date().toISOString().slice(0,7);
+  const monthDefault=state.dashboardMonth || new Date().toISOString().slice(0,7);
 
   app.innerHTML=`
     <section class="card">
@@ -992,7 +996,7 @@ async function renderDashboard(){
       renderDashboardPanels();
     }
   };
-  document.getElementById('loadBtn').onclick=async()=>{ await loadDashboard(); };
+  document.getElementById('loadBtn').onclick=async()=>{ await loadDashboard(true); };
   const dashDetails=document.getElementById('dashDetails');
   if(dashDetails){
     dashDetails.addEventListener('toggle',()=>{
@@ -1001,7 +1005,7 @@ async function renderDashboard(){
       }
     });
   }
-  await loadDashboard();
+  await loadDashboard(false);
 }
 
 async function renderClosure(){
@@ -1865,18 +1869,44 @@ function renderManagerPanel(out, model, k){
     </table>`;
 }
 
-async function loadDashboard(){
+function invalidateDashboardClientCache(){
+  state.dashboardMonthCache={};
+  state.dashboardRaw=null;
+  state.dashboard=null;
+  state.dashboardTableKey='';
+}
+
+async function loadDashboard(force){
   try{
     const monthInput=document.getElementById('month');
-    const selectedMonth=monthInput.value;
-    let out=await safeServer('getDashboard',{token:state.token,month:selectedMonth});
+    let selectedMonth=String(monthInput.value||'');
+    state.dashboardMonth=selectedMonth;
+    localStorage.setItem('kardex_dash_month', selectedMonth);
+
+    let out=null;
+    if(!force && state.dashboardMonthCache[selectedMonth]){
+      out=state.dashboardMonthCache[selectedMonth];
+    }else{
+      out=await safeServer('getDashboard',{token:state.token,month:selectedMonth});
+      state.dashboardMonthCache[selectedMonth]=out;
+    }
+
     const hasRows=(out && out.month_movements && out.month_movements.length>0);
     if(!hasRows){
       const latestMonth=findLatestMonthWithData(out && out.recent);
       if(latestMonth && latestMonth!==selectedMonth){
-        out=await safeServer('getDashboard',{token:state.token,month:latestMonth});
+        if(!force && state.dashboardMonthCache[latestMonth]){
+          out=state.dashboardMonthCache[latestMonth];
+        }else{
+          out=await safeServer('getDashboard',{token:state.token,month:latestMonth});
+          state.dashboardMonthCache[latestMonth]=out;
+        }
         monthInput.value=latestMonth;
-        showMsg(`No hay movimientos en ${selectedMonth}. Se cargó automáticamente ${latestMonth}.`, true);
+        const prevMonth=selectedMonth;
+        selectedMonth=latestMonth;
+        state.dashboardMonth=latestMonth;
+        localStorage.setItem('kardex_dash_month', latestMonth);
+        showMsg(`No hay movimientos en ${prevMonth}. Se cargó automáticamente ${latestMonth}.`, true);
       }
     }
     state.dashboardRaw=out;
@@ -2224,6 +2254,7 @@ function renderMovements(){
       if(!payload.quantity || payload.quantity<=0){ showMsg('Ingrese una cantidad valida.'); return; }
 
       await safeServer('createMovement',payload);
+      invalidateDashboardClientCache();
       state.closureCache={};
       showMsg('Movimiento guardado correctamente.',true);
 
@@ -2268,6 +2299,7 @@ function renderItems(){
         initial_stock:Number(document.getElementById('i_stock').value||0)
       });
       showMsg('Item creado.',true);
+      invalidateDashboardClientCache();
       await loadBootstrap();
       renderItems();
     }catch(e){ showMsg(e); }
@@ -2303,6 +2335,7 @@ function renderServices(){
     try{
       await safeServer('createService',{token:state.token,service_name:document.getElementById('s_name').value});
       showMsg('Servicio creado.',true);
+      invalidateDashboardClientCache();
       await loadBootstrap();
       renderServices();
     }catch(e){ showMsg(e); }
