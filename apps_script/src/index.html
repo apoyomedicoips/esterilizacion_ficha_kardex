@@ -3,31 +3,347 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Kardex Seguro</title>
+  <title>Kardex Enfermeria</title>
   <style>
-    :root { --bg:#eef4f6; --card:#fff; --line:#d2dfe3; --text:#0f1e22; --acc:#0d6370; --err:#8c1f1f; --ok:#1a6e38; }
-    *{box-sizing:border-box} body{margin:0;background:linear-gradient(135deg,#eef4f6,#e6f0f3);color:var(--text);font-family:"Segoe UI",Tahoma,sans-serif}
-    .top{background:#083c45;color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center}
-    .menu{background:#0c5560;padding:8px 16px;display:flex;gap:10px;flex-wrap:wrap}
-    .menu button{background:#0f6c7a}
-    main{padding:16px}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px;box-shadow:0 4px 12px rgba(0,0,0,.05)}
-    label{display:block;margin-top:8px;font-weight:600} input,select,textarea,button{width:100%;margin-top:4px;padding:10px;border:1px solid #c7d8dc;border-radius:8px}
-    button{background:var(--acc);color:#fff;border:none;font-weight:700;cursor:pointer}
-    .grid{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:10px}.grid button{grid-column:1/-1;max-width:260px}
-    .inline{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.inline input,.inline button,.inline select{width:auto}
-    table{border-collapse:collapse;width:100%;font-size:.88rem} th,td{border:1px solid #dce7ea;padding:6px 8px;white-space:nowrap} th{background:#e8f4f7}
-    .table{overflow:auto}.msg{padding:10px;border-radius:8px;margin-bottom:8px}.msg.err{background:#ffe9e9;color:var(--err)}.msg.ok{background:#e8f8ed;color:var(--ok)}
-    .hidden{display:none}.narrow{max-width:420px;margin:40px auto}
-    @media(max-width:900px){.grid{grid-template-columns:1fr}}
+    :root {
+      --bg: #f3f8f9;
+      --bg-2: #e8f1f4;
+      --card: #ffffff;
+      --line: #d6e2e6;
+      --text: #0f2127;
+      --muted: #4d666e;
+      --brand: #0b5f6d;
+      --brand-2: #147a8c;
+      --ok: #0c6a39;
+      --err: #992a2a;
+      --warn: #7d5a00;
+      --entry: #0a7a55;
+      --exit: #a23a1d;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background:
+        radial-gradient(circle at 10% 0%, #f6fbfc 0%, transparent 34%),
+        linear-gradient(145deg, var(--bg) 0%, var(--bg-2) 100%);
+    }
+
+    .top {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      border-bottom: 1px solid #1d6a78;
+      background: linear-gradient(120deg, #0a4852 0%, #0e5a67 70%, #137184 100%);
+      color: #fff;
+      padding: 14px 16px 12px;
+      box-shadow: 0 4px 16px rgba(9, 52, 60, 0.25);
+    }
+
+    .top-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .title {
+      margin: 0;
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+    }
+
+    .subtitle {
+      margin: 4px 0 0;
+      opacity: 0.93;
+      font-size: 0.87rem;
+    }
+
+    .user-pill {
+      background: rgba(255, 255, 255, 0.14);
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      border-radius: 999px;
+      font-size: 0.84rem;
+      padding: 6px 10px;
+      white-space: nowrap;
+    }
+
+    .menu {
+      margin-top: 10px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .menu button {
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
+      border-radius: 999px;
+      padding: 9px 14px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .menu button.active { background: #fff; color: #0b5661; }
+    .menu button:hover { filter: brightness(1.08); }
+
+    main {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      margin-bottom: 14px;
+      box-shadow: 0 6px 16px rgba(14, 60, 70, 0.06);
+    }
+
+    .narrow { max-width: 460px; margin: 28px auto; }
+
+    h2 {
+      margin: 0 0 10px;
+      font-size: 1.18rem;
+      line-height: 1.2;
+    }
+
+    .help {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(180px, 1fr));
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .step {
+      border: 1px dashed #bad0d7;
+      border-radius: 10px;
+      background: #f7fcfd;
+      padding: 8px 10px;
+      font-size: 0.88rem;
+      color: #33525c;
+    }
+
+    .step b { color: #124a57; }
+
+    label {
+      display: block;
+      margin-top: 10px;
+      font-weight: 700;
+      font-size: 0.91rem;
+    }
+
+    input, select, textarea, button {
+      width: 100%;
+      margin-top: 4px;
+      border: 1px solid #c8d9de;
+      border-radius: 10px;
+      padding: 11px 12px;
+      font-size: 0.95rem;
+      background: #fff;
+      color: var(--text);
+    }
+
+    textarea { min-height: 84px; resize: vertical; }
+
+    button {
+      border: none;
+      background: var(--brand);
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform .05s ease, filter .15s ease;
+    }
+
+    button:hover { filter: brightness(1.06); }
+    button:active { transform: translateY(1px); }
+
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .btn-row button { width: auto; }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(130px, 1fr));
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .kpi {
+      border: 1px solid #cee0e5;
+      border-radius: 12px;
+      background: linear-gradient(150deg, #ffffff 0%, #f4fafb 100%);
+      padding: 10px;
+    }
+
+    .kpi .k-label { color: #4a6670; font-size: 0.82rem; margin: 0; }
+    .kpi .k-value { font-size: 1.2rem; margin: 4px 0 0; font-weight: 800; color: #0f4d59; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(220px, 1fr));
+      gap: 12px;
+      align-items: start;
+    }
+
+    .grid button.save {
+      grid-column: 1 / -1;
+      max-width: 280px;
+      font-size: 1rem;
+      padding: 12px;
+    }
+
+    .move-type {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(160px, 1fr));
+      gap: 10px;
+      margin-top: 6px;
+    }
+
+    .type-btn {
+      border-radius: 12px;
+      border: 1px solid #c8d9de;
+      padding: 12px;
+      font-size: 0.94rem;
+      background: #fff;
+      color: #184a55;
+      font-weight: 700;
+    }
+
+    .type-btn.active.entry { background: #eaf8f2; border-color: #9fd3bc; color: var(--entry); }
+    .type-btn.active.exit { background: #fff1ec; border-color: #efbeac; color: var(--exit); }
+
+    .note {
+      border-left: 4px solid #97bac5;
+      background: #f5fafb;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 0.88rem;
+      color: #385864;
+      margin-top: 10px;
+    }
+
+    .table {
+      overflow: auto;
+      border: 1px solid #d5e3e8;
+      border-radius: 10px;
+      background: #fff;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 0.88rem;
+    }
+
+    th, td {
+      border: 1px solid #dfebef;
+      padding: 7px 8px;
+      white-space: nowrap;
+      text-align: left;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #ecf6f8;
+      color: #114652;
+      font-size: 0.83rem;
+    }
+
+    td strong { color: #083d47; }
+
+    .chip {
+      border-radius: 999px;
+      padding: 4px 9px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      display: inline-block;
+    }
+
+    .chip.in { background: #e8f8ef; color: #0d6f3d; border: 1px solid #b4dfc4; }
+    .chip.out { background: #fff0ea; color: #963b22; border: 1px solid #f0c6b8; }
+
+    .msg {
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      font-weight: 700;
+      font-size: 0.92rem;
+    }
+
+    .msg.ok { background: #e7f8ed; color: var(--ok); border: 1px solid #c2e7ce; }
+    .msg.err { background: #ffeded; color: var(--err); border: 1px solid #f0c2c2; }
+    .hidden { display: none; }
+
+    .loader {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(7, 35, 41, 0.28);
+      z-index: 99;
+      backdrop-filter: blur(2px);
+    }
+
+    .loader-card {
+      background: #fff;
+      border: 1px solid #cfdfe4;
+      border-radius: 12px;
+      padding: 14px 18px;
+      font-weight: 700;
+      color: #0f4c57;
+      box-shadow: 0 10px 25px rgba(7, 35, 41, 0.2);
+    }
+
+    .small { font-size: 0.83rem; color: var(--muted); }
+
+    @media (max-width: 980px) {
+      .grid { grid-template-columns: 1fr; }
+      .move-type { grid-template-columns: 1fr; }
+      .summary { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
+      .steps { grid-template-columns: 1fr; }
+      main { padding: 12px; }
+    }
   </style>
 </head>
 <body>
   <header class="top">
-    <strong>Kardex Seguro Apps Script</strong>
-    <div id="userLabel"></div>
+    <div class="top-row">
+      <div>
+        <h1 class="title">Kardex de Esterilizacion</h1>
+        <p class="subtitle">Registro diario de insumos para enfermeria</p>
+      </div>
+      <div id="userLabel" class="user-pill"></div>
+    </div>
+    <nav id="menu" class="menu hidden"></nav>
   </header>
-  <nav id="menu" class="menu hidden"></nav>
+
   <main id="app"></main>
+
+  <div id="loader" class="loader">
+    <div class="loader-card">Cargando, por favor espere...</div>
+  </div>
 
 <script>
 const state = {
@@ -35,8 +351,21 @@ const state = {
   user: null,
   bootstrap: null,
   dashboard: null,
-  currentView: 'dashboard'
+  currentView: 'dashboard',
+  movementType: 'OUT'
 };
+
+const VIEW_LABELS = {
+  dashboard: 'Tablero',
+  movements: 'Registrar movimiento',
+  items: 'Catalogo de items',
+  services: 'Catalogo de servicios',
+  audit: 'Auditoria'
+};
+
+function setLoading(on) {
+  document.getElementById('loader').style.display = on ? 'flex' : 'none';
+}
 
 function showMsg(text, ok=false){
   const el=document.createElement('div');
@@ -44,7 +373,7 @@ function showMsg(text, ok=false){
   el.textContent=text;
   const app=document.getElementById('app');
   app.prepend(el);
-  setTimeout(()=>el.remove(),6000);
+  setTimeout(()=>el.remove(),6500);
 }
 
 function runServer(fn, payload){
@@ -54,6 +383,18 @@ function runServer(fn, payload){
       .withFailureHandler(err=>reject(err && err.message ? err.message : String(err)))
       [fn](payload);
   });
+}
+
+async function safeServer(fn, payload){
+  setLoading(true);
+  try { return await runServer(fn, payload); }
+  finally { setLoading(false); }
+}
+
+function roleName(role){
+  if(role==='admin') return 'Administracion';
+  if(role==='operator') return 'Operador/a';
+  return 'Consulta';
 }
 
 function render(){
@@ -68,95 +409,165 @@ function render(){
 
 function renderLogin(){
   document.getElementById('menu').classList.add('hidden');
-  document.getElementById('userLabel').textContent='';
+  document.getElementById('userLabel').textContent='No autenticado';
+
   const app=document.getElementById('app');
   app.innerHTML=`
     <section class="card narrow">
-      <h2>Ingreso</h2>
-      <label>Usuario</label><input id="u" type="text"/>
-      <label>Contrasena</label><input id="p" type="password"/>
-      <button id="b">Entrar</button>
-      <p style="font-size:.85rem">Version <?= appVersion ?></p>
+      <h2>Bienvenida/o</h2>
+      <p class="help">Ingrese su usuario y contrasena para comenzar.</p>
+      <label>Usuario</label>
+      <input id="u" type="text" autocomplete="username" placeholder="Ejemplo: user"/>
+
+      <label>Contrasena</label>
+      <input id="p" type="password" autocomplete="current-password" placeholder="Ingrese su contrasena"/>
+
+      <div class="btn-row" style="margin-top:12px">
+        <button id="b">Entrar al sistema</button>
+      </div>
+      <p class="small">Version <?= appVersion ?></p>
     </section>`;
+
+  document.getElementById('u').focus();
+  document.getElementById('p').addEventListener('keydown', (e)=>{ if(e.key==='Enter') document.getElementById('b').click(); });
 
   document.getElementById('b').onclick=async()=>{
     try{
       const username=document.getElementById('u').value.trim();
       const password=document.getElementById('p').value;
-      const out=await runServer('login',{username,password});
+      if(!username || !password){ showMsg('Complete usuario y contrasena.'); return; }
+
+      const out=await safeServer('login',{username,password});
       state.token=out.token;
       localStorage.setItem('kardex_token',state.token);
       state.user=out.user;
       await loadBootstrap();
       state.currentView='dashboard';
       render();
+      showMsg('Ingreso correcto. Bienvenida/o.', true);
     }catch(e){ showMsg(e); }
   };
 }
 
 async function loadBootstrap(){
-  const out=await runServer('getBootstrap',state.token);
+  const out=await safeServer('getBootstrap',state.token);
   state.bootstrap=out;
   state.user=out.user;
 }
 
 function renderShell(){
-  document.getElementById('userLabel').textContent = state.user ? `${state.user.username} (${state.user.role})` : '';
+  document.getElementById('userLabel').textContent = state.user ? `${state.user.username} · ${roleName(state.user.role)}` : '';
+
   const menu=document.getElementById('menu');
   menu.classList.remove('hidden');
-  const canWrite=state.user && (state.user.role==='admin' || state.user.role==='operator');
-  const isAdmin=state.user && state.user.role==='admin';
   menu.innerHTML='';
 
-  addMenuBtn(menu,'Dashboard',()=>{state.currentView='dashboard';render();});
-  if(canWrite) addMenuBtn(menu,'Movimientos',()=>{state.currentView='movements';render();});
+  const canWrite=state.user && (state.user.role==='admin' || state.user.role==='operator');
+  const isAdmin=state.user && state.user.role==='admin';
+
+  addMenuBtn(menu,'Tablero','dashboard',()=>{state.currentView='dashboard';render();});
+  if(canWrite) addMenuBtn(menu,'Registrar','movements',()=>{state.currentView='movements';render();});
   if(isAdmin){
-    addMenuBtn(menu,'Items',()=>{state.currentView='items';render();});
-    addMenuBtn(menu,'Servicios',()=>{state.currentView='services';render();});
-    addMenuBtn(menu,'Auditoria',()=>{state.currentView='audit';render();});
-    addMenuBtn(menu,'Init hojas',async()=>{
-      try{ await runServer('initSchema',{token:state.token}); showMsg('Hojas inicializadas',true); await loadBootstrap(); }
-      catch(e){ showMsg(e); }
+    addMenuBtn(menu,'Items','items',()=>{state.currentView='items';render();});
+    addMenuBtn(menu,'Servicios','services',()=>{state.currentView='services';render();});
+    addMenuBtn(menu,'Auditoria','audit',()=>{state.currentView='audit';render();});
+    addMenuBtn(menu,'Inicializar','init',async()=>{
+      try{
+        await safeServer('initSchema',{token:state.token});
+        showMsg('Hojas inicializadas correctamente.',true);
+        await loadBootstrap();
+      }catch(e){ showMsg(e); }
     });
   }
-  addMenuBtn(menu,'Salir',async()=>{
-    try{ await runServer('logout',state.token); }catch(_e){}
+
+  addMenuBtn(menu,'Salir','logout',async()=>{
+    try{ await safeServer('logout',state.token); }catch(_e){}
     localStorage.removeItem('kardex_token');
     state.token=''; state.user=null; state.bootstrap=null;
     renderLogin();
   });
 }
 
-function addMenuBtn(menu,label,cb){
-  const b=document.createElement('button'); b.textContent=label; b.onclick=cb; b.style.width='auto'; menu.appendChild(b);
+function addMenuBtn(menu,label,view,cb){
+  const b=document.createElement('button');
+  b.textContent=label;
+  if(state.currentView===view) b.classList.add('active');
+  b.onclick=cb;
+  b.style.width='auto';
+  menu.appendChild(b);
 }
 
 async function renderDashboard(){
   const app=document.getElementById('app');
-  const month=new Date().toISOString().slice(0,7);
-  app.innerHTML=`<section class="card"><h2>Stock acumulado diario</h2>
-    <div class="inline"><label>Mes</label><input id="month" type="month" value="${month}"/><button id="loadBtn">Cargar</button></div>
-    <div id="dashTable" class="table" style="margin-top:10px"></div>
-  </section>`;
+  const monthDefault=new Date().toISOString().slice(0,7);
+
+  app.innerHTML=`
+    <section class="card">
+      <h2>${VIEW_LABELS.dashboard}</h2>
+      <p class="help">Aqui puede ver el saldo diario por item. Seleccione el mes para consultar.</p>
+
+      <div class="summary" id="kpi"></div>
+
+      <div class="inline">
+        <div>
+          <label>Mes</label>
+          <input id="month" type="month" value="${monthDefault}"/>
+        </div>
+        <button id="loadBtn">Actualizar tablero</button>
+      </div>
+
+      <div id="dashTable" class="table" style="margin-top:12px"></div>
+    </section>`;
 
   document.getElementById('loadBtn').onclick=async()=>{ await loadDashboard(); };
   await loadDashboard();
 }
 
+function calcKpis(out){
+  let totalFinal=0;
+  let totalInicio=0;
+  let bajo=0;
+  out.rows.forEach(r=>{
+    totalFinal += Number(r.end_balance||0);
+    totalInicio += Number(r.start_balance||0);
+    if(Number(r.end_balance||0) <= 0) bajo++;
+  });
+  return {
+    items: out.rows.length,
+    inicio: totalInicio,
+    final: totalFinal,
+    criticos: bajo
+  };
+}
+
 async function loadDashboard(){
   try{
     const month=document.getElementById('month').value;
-    const out=await runServer('getDashboard',{token:state.token,month});
+    const out=await safeServer('getDashboard',{token:state.token,month});
     state.dashboard=out;
-    const head=['<th>Codigo</th><th>Descripcion</th><th>Inicio</th>'];
+
+    const k=calcKpis(out);
+    document.getElementById('kpi').innerHTML=`
+      <div class="kpi"><p class="k-label">Items activos</p><p class="k-value">${k.items}</p></div>
+      <div class="kpi"><p class="k-label">Saldo total inicio</p><p class="k-value">${fmt(k.inicio)}</p></div>
+      <div class="kpi"><p class="k-label">Saldo total final</p><p class="k-value">${fmt(k.final)}</p></div>
+      <div class="kpi"><p class="k-label">Items en cero</p><p class="k-value">${k.criticos}</p></div>`;
+
+    const head=['<th>Item</th><th>Descripcion</th><th>Inicio</th>'];
     out.days.forEach(d=>head.push(`<th>${d}</th>`));
     head.push('<th>Final</th>');
+
     const rows=out.rows.map(r=>{
-      const t=[`<td>${esc(r.item_code)}</td>`,`<td>${esc(r.item_name)}</td>`,`<td>${r.start_balance}</td>`];
-      r.day_values.forEach(v=>t.push(`<td>${v}</td>`));
-      t.push(`<td><b>${r.end_balance}</b></td>`);
+      const t=[
+        `<td><strong>${esc(r.item_code)}</strong></td>`,
+        `<td>${esc(r.item_name)}</td>`,
+        `<td>${fmt(r.start_balance)}</td>`
+      ];
+      r.day_values.forEach(v=>t.push(`<td>${fmt(v)}</td>`));
+      t.push(`<td><strong>${fmt(r.end_balance)}</strong></td>`);
       return `<tr>${t.join('')}</tr>`;
     }).join('');
+
     document.getElementById('dashTable').innerHTML=`<table><thead><tr>${head.join('')}</tr></thead><tbody>${rows}</tbody></table>`;
   }catch(e){ showMsg(e); }
 }
@@ -165,34 +576,96 @@ function renderMovements(){
   const app=document.getElementById('app');
   const items=(state.bootstrap && state.bootstrap.items)||[];
   const services=(state.bootstrap && state.bootstrap.services)||[];
+  const today = new Date().toISOString().slice(0,10);
+
   app.innerHTML=`
   <section class="card">
-    <h2>Registrar movimiento</h2>
+    <h2>${VIEW_LABELS.movements}</h2>
+    <p class="help">Complete los datos y confirme. El registro se guarda de forma inmediata en la planilla.</p>
+
+    <div class="steps">
+      <div class="step"><b>Paso 1:</b> Seleccione si es entrada o salida.</div>
+      <div class="step"><b>Paso 2:</b> Cargue fecha, item, servicio y cantidad.</div>
+      <div class="step"><b>Paso 3:</b> Presione <b>Guardar movimiento</b>.</div>
+    </div>
+
+    <label>Tipo de movimiento</label>
+    <div class="move-type">
+      <button id="btnOut" class="type-btn exit active">Salida de insumo</button>
+      <button id="btnIn" class="type-btn entry">Entrada de insumo</button>
+    </div>
+
+    <div class="note" id="moveHelp">Salida: descuenta unidades del stock.</div>
+
     <div class="grid">
-      <div><label>Fecha</label><input id="m_date" type="date"/></div>
-      <div><label>Item</label><select id="m_item">${items.map(i=>`<option value="${escAttr(i.item_code)}">${esc(i.item_code)} - ${esc(i.item_name)}</option>`).join('')}</select></div>
-      <div><label>Servicio</label><select id="m_service">${services.map(s=>`<option value="${escAttr(s.service_name)}">${esc(s.service_name)}</option>`).join('')}</select></div>
-      <div><label>Tipo</label><select id="m_type"><option>OUT</option><option>IN</option></select></div>
-      <div><label>Cantidad</label><input id="m_qty" type="number" min="1"/></div>
-      <div><label>Ticket</label><input id="m_ticket" type="text"/></div>
-      <div style="grid-column:1/-1"><label>Notas</label><textarea id="m_notes"></textarea></div>
-      <button id="saveMove">Guardar</button>
+      <div>
+        <label>Fecha</label>
+        <input id="m_date" type="date" value="${today}"/>
+      </div>
+      <div>
+        <label>Item</label>
+        <select id="m_item">${items.map(i=>`<option value="${escAttr(i.item_code)}">${esc(i.item_code)} - ${esc(i.item_name)}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label>Servicio</label>
+        <select id="m_service">${services.map(s=>`<option value="${escAttr(s.service_name)}">${esc(s.service_name)}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label>Cantidad</label>
+        <input id="m_qty" type="number" min="1" placeholder="Ejemplo: 10"/>
+      </div>
+      <div>
+        <label>Nro. boleta / ticket (opcional)</label>
+        <input id="m_ticket" type="text" placeholder="Ejemplo: 1234"/>
+      </div>
+      <div>
+        <label>Nota (opcional)</label>
+        <textarea id="m_notes" placeholder="Observaciones"></textarea>
+      </div>
+      <button id="saveMove" class="save">Guardar movimiento</button>
     </div>
   </section>`;
-  document.getElementById('m_date').value = new Date().toISOString().slice(0,10);
+
+  function setType(t){
+    state.movementType=t;
+    const outBtn=document.getElementById('btnOut');
+    const inBtn=document.getElementById('btnIn');
+    outBtn.classList.remove('active'); inBtn.classList.remove('active');
+    if(t==='OUT') outBtn.classList.add('active');
+    if(t==='IN') inBtn.classList.add('active');
+    document.getElementById('moveHelp').textContent = t==='OUT'
+      ? 'Salida: descuenta unidades del stock.'
+      : 'Entrada: suma unidades al stock.';
+  }
+
+  document.getElementById('btnOut').onclick=()=>setType('OUT');
+  document.getElementById('btnIn').onclick=()=>setType('IN');
+
   document.getElementById('saveMove').onclick=async()=>{
     try{
-      await runServer('createMovement',{
+      const payload={
         token:state.token,
         movement_date:document.getElementById('m_date').value,
         item_code:document.getElementById('m_item').value,
         service_name:document.getElementById('m_service').value,
-        move_type:document.getElementById('m_type').value,
+        move_type:state.movementType,
         quantity:Number(document.getElementById('m_qty').value||0),
         ticket_no:document.getElementById('m_ticket').value,
         notes:document.getElementById('m_notes').value
-      });
-      showMsg('Movimiento guardado',true);
+      };
+
+      if(!payload.movement_date){ showMsg('Seleccione la fecha.'); return; }
+      if(!payload.item_code){ showMsg('Seleccione un item.'); return; }
+      if(!payload.service_name){ showMsg('Seleccione un servicio.'); return; }
+      if(!payload.quantity || payload.quantity<=0){ showMsg('Ingrese una cantidad valida.'); return; }
+
+      await safeServer('createMovement',payload);
+      showMsg('Movimiento guardado correctamente.',true);
+
+      document.getElementById('m_qty').value='';
+      document.getElementById('m_ticket').value='';
+      document.getElementById('m_notes').value='';
+      document.getElementById('m_qty').focus();
     }catch(e){ showMsg(e); }
   };
 }
@@ -200,23 +673,36 @@ function renderMovements(){
 function renderItems(){
   const app=document.getElementById('app');
   const items=(state.bootstrap && state.bootstrap.items)||[];
+
   app.innerHTML=`
-  <section class="card"><h2>Items</h2>
+  <section class="card">
+    <h2>${VIEW_LABELS.items}</h2>
+    <p class="help">Uso administrativo. Agregue nuevos codigos de insumo.</p>
+
     <div class="grid">
       <div><label>Codigo</label><input id="i_code" type="text"/></div>
-      <div><label>Nombre</label><input id="i_name" type="text"/></div>
+      <div><label>Nombre del item</label><input id="i_name" type="text"/></div>
       <div><label>Stock inicial</label><input id="i_stock" type="number" value="0"/></div>
-      <button id="saveItem">Crear item</button>
+      <button id="saveItem" class="save">Crear item</button>
     </div>
-    <div class="table" style="margin-top:10px"><table><thead><tr><th>Codigo</th><th>Nombre</th><th>Stock</th><th>Activo</th></tr></thead><tbody>
-      ${items.map(i=>`<tr><td>${esc(i.item_code)}</td><td>${esc(i.item_name)}</td><td>${i.initial_stock}</td><td>${i.active}</td></tr>`).join('')}
-    </tbody></table></div>
+
+    <div class="table" style="margin-top:12px">
+      <table>
+        <thead><tr><th>Codigo</th><th>Nombre</th><th>Stock inicial</th><th>Activo</th></tr></thead>
+        <tbody>${items.map(i=>`<tr><td><strong>${esc(i.item_code)}</strong></td><td>${esc(i.item_name)}</td><td>${fmt(i.initial_stock)}</td><td>${i.active?'Si':'No'}</td></tr>`).join('')}</tbody>
+      </table>
+    </div>
   </section>`;
 
   document.getElementById('saveItem').onclick=async()=>{
     try{
-      await runServer('createItem',{token:state.token,code:document.getElementById('i_code').value,name:document.getElementById('i_name').value,initial_stock:Number(document.getElementById('i_stock').value||0)});
-      showMsg('Item creado',true);
+      await safeServer('createItem',{
+        token:state.token,
+        code:document.getElementById('i_code').value,
+        name:document.getElementById('i_name').value,
+        initial_stock:Number(document.getElementById('i_stock').value||0)
+      });
+      showMsg('Item creado.',true);
       await loadBootstrap();
       renderItems();
     }catch(e){ showMsg(e); }
@@ -226,18 +712,32 @@ function renderItems(){
 function renderServices(){
   const app=document.getElementById('app');
   const services=(state.bootstrap && state.bootstrap.services)||[];
+
   app.innerHTML=`
-  <section class="card"><h2>Servicios</h2>
-    <div class="inline"><div><label>Nombre</label><input id="s_name" type="text"/></div><button id="saveService">Crear servicio</button></div>
-    <div class="table" style="margin-top:10px"><table><thead><tr><th>Servicio</th><th>Activo</th></tr></thead><tbody>
-      ${services.map(s=>`<tr><td>${esc(s.service_name)}</td><td>${s.active}</td></tr>`).join('')}
-    </tbody></table></div>
+  <section class="card">
+    <h2>${VIEW_LABELS.services}</h2>
+    <p class="help">Uso administrativo. Agregue nuevos servicios.</p>
+
+    <div class="inline">
+      <div>
+        <label>Nombre del servicio</label>
+        <input id="s_name" type="text" placeholder="Ejemplo: QUIROFANO URGENCIAS"/>
+      </div>
+      <button id="saveService">Crear servicio</button>
+    </div>
+
+    <div class="table" style="margin-top:12px">
+      <table>
+        <thead><tr><th>Servicio</th><th>Activo</th></tr></thead>
+        <tbody>${services.map(s=>`<tr><td>${esc(s.service_name)}</td><td>${s.active?'Si':'No'}</td></tr>`).join('')}</tbody>
+      </table>
+    </div>
   </section>`;
 
   document.getElementById('saveService').onclick=async()=>{
     try{
-      await runServer('createService',{token:state.token,service_name:document.getElementById('s_name').value});
-      showMsg('Servicio creado',true);
+      await safeServer('createService',{token:state.token,service_name:document.getElementById('s_name').value});
+      showMsg('Servicio creado.',true);
       await loadBootstrap();
       renderServices();
     }catch(e){ showMsg(e); }
@@ -246,14 +746,31 @@ function renderServices(){
 
 async function renderAudit(){
   const app=document.getElementById('app');
-  app.innerHTML=`<section class="card"><h2>Auditoria</h2><div id="a_tbl" class="table"></div></section>`;
+  app.innerHTML=`
+    <section class="card">
+      <h2>${VIEW_LABELS.audit}</h2>
+      <p class="help">Uso administrativo. Registro de acciones del sistema.</p>
+      <div id="a_tbl" class="table"></div>
+    </section>`;
+
   try{
-    const logs=await runServer('getAudit',{token:state.token});
-    document.getElementById('a_tbl').innerHTML=`<table><thead><tr><th>Fecha</th><th>Usuario</th><th>Accion</th><th>Entidad</th><th>ID</th><th>Detalle</th></tr></thead><tbody>${logs.map(l=>`<tr><td>${esc(l.created_at)}</td><td>${esc(l.username)}</td><td>${esc(l.action)}</td><td>${esc(l.entity)}</td><td>${esc(l.entity_id)}</td><td>${esc(l.details)}</td></tr>`).join('')}</tbody></table>`;
+    const logs=await safeServer('getAudit',{token:state.token});
+    document.getElementById('a_tbl').innerHTML=`
+      <table>
+        <thead><tr><th>Fecha</th><th>Usuario</th><th>Accion</th><th>Entidad</th><th>ID</th><th>Detalle</th></tr></thead>
+        <tbody>${logs.map(l=>`<tr><td>${esc(l.created_at)}</td><td>${esc(l.username)}</td><td>${esc(l.action)}</td><td>${esc(l.entity)}</td><td>${esc(l.entity_id)}</td><td>${esc(l.details)}</td></tr>`).join('')}</tbody>
+      </table>`;
   }catch(e){ showMsg(e); }
 }
 
-function esc(v){ return String(v==null?'':v).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m])); }
+function fmt(v){
+  const n=Number(v||0);
+  return Number.isFinite(n) ? n.toLocaleString('es-PY') : String(v||'');
+}
+
+function esc(v){
+  return String(v==null?'':v).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+}
 function escAttr(v){ return esc(v); }
 
 (async function init(){
