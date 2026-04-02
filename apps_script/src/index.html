@@ -1401,8 +1401,12 @@ function colorRamp(i){
 function fitCanvas(canvas){
   if(!canvas) return null;
   const ratio=window.devicePixelRatio || 1;
-  const w=Math.max(320, canvas.clientWidth || 600);
-  const h=Math.max(180, canvas.clientHeight || 240);
+  const parent=canvas.parentElement;
+  const rect=parent ? parent.getBoundingClientRect() : null;
+  const w=Math.max(320, Math.floor((rect && rect.width) || canvas.clientWidth || 600));
+  const h=Math.max(180, Math.floor((rect && rect.height) || canvas.clientHeight || 240));
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
   canvas.width=Math.floor(w*ratio);
   canvas.height=Math.floor(h*ratio);
   const ctx=canvas.getContext('2d');
@@ -1861,7 +1865,8 @@ function renderDashboardPanels(){
 
     document.getElementById('dashTable').innerHTML=`<table><thead><tr>${head.join('')}</tr></thead><tbody>${rows}</tbody></table>`;
   renderItemSheet(out, model);
-  renderDashboardCharts(out, model);
+  requestAnimationFrame(()=>renderDashboardCharts(out, model));
+  setTimeout(()=>renderDashboardCharts(out, model), 120);
   renderManagerPanel(out, model, k);
   renderSemaforo(model);
   renderSemaforoArea(model);
