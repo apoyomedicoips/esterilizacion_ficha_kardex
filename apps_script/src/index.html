@@ -244,75 +244,6 @@
       grid-template-columns: repeat(2, minmax(280px, 1fr));
       gap: 10px;
     }
-    .dashboard-shell {
-      display: grid;
-      grid-template-columns: 290px minmax(0, 1fr);
-      gap: 12px;
-      margin-top: 10px;
-      align-items: start;
-    }
-    .dashboard-left {
-      border: 1px solid #d2e2e7;
-      border-radius: 12px;
-      background: linear-gradient(170deg, #ffffff 0%, #f5fbfd 100%);
-      padding: 10px;
-      position: sticky;
-      top: 92px;
-      max-height: calc(100vh - 116px);
-      overflow: auto;
-    }
-    .sheet-title {
-      margin: 0;
-      color: #174f5b;
-      font-size: 0.93rem;
-      font-weight: 800;
-    }
-    .sheet-subtitle {
-      margin: 4px 0 8px;
-      color: #4e6971;
-      font-size: 0.82rem;
-    }
-    .sheet-search {
-      margin-bottom: 8px;
-    }
-    .sheet-list {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-    .sheet-tab {
-      text-align: left;
-      border: 1px solid #cddfe5;
-      background: #f9fcfd;
-      color: #204f5c;
-      border-radius: 10px;
-      padding: 8px 9px;
-      cursor: pointer;
-    }
-    .sheet-tab.active {
-      background: linear-gradient(140deg, #0f6776 0%, #167f92 100%);
-      color: #fff;
-      border-color: transparent;
-    }
-    .sheet-tab .main {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 6px;
-      font-size: 0.86rem;
-      font-weight: 800;
-    }
-    .sheet-tab .sub {
-      margin-top: 2px;
-      font-size: 0.78rem;
-      opacity: 0.92;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .dashboard-right {
-      min-width: 0;
-    }
     .chart-card {
       border: 1px solid #d1e2e7;
       border-radius: 12px;
@@ -462,6 +393,66 @@
       gap: 8px;
       margin-bottom: 8px;
     }
+    .movement-shell {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .movement-left {
+      border: 1px solid #d2e2e7;
+      border-radius: 12px;
+      background: linear-gradient(170deg, #ffffff 0%, #f5fbfd 100%);
+      padding: 10px;
+      max-height: 74vh;
+      overflow: auto;
+    }
+    .movement-left h3 {
+      margin: 0;
+      color: #174f5b;
+      font-size: 0.93rem;
+    }
+    .movement-left p {
+      margin: 4px 0 8px;
+      color: #4e6971;
+      font-size: 0.82rem;
+    }
+    .movement-item-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .movement-item {
+      width: 100%;
+      text-align: left;
+      border: 1px solid #cddfe5;
+      border-left: 8px solid #5f8a98;
+      border-radius: 10px;
+      background: #f9fcfd;
+      color: #204f5c;
+      padding: 8px 9px;
+      cursor: pointer;
+    }
+    .movement-item.active {
+      box-shadow: 0 0 0 2px rgba(16, 88, 100, 0.15) inset;
+      border-color: #8cb9c5;
+      background: #eef8fb;
+    }
+    .movement-item .main {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 0.86rem;
+      font-weight: 800;
+    }
+    .movement-item .sub {
+      margin-top: 2px;
+      font-size: 0.78rem;
+      opacity: 0.92;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
 
     .grid {
       display: grid;
@@ -586,11 +577,6 @@
 
     @media (max-width: 980px) {
       .inline { grid-template-columns: 1fr; }
-      .dashboard-shell { grid-template-columns: 1fr; }
-      .dashboard-left {
-        position: static;
-        max-height: none;
-      }
       .grid { grid-template-columns: 1fr; }
       .move-type { grid-template-columns: 1fr; }
       .summary { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
@@ -598,6 +584,8 @@
       .analytics-grid { grid-template-columns: 1fr; }
       .manager-kpis { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
       .item-sheet-kpis { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+      .movement-shell { grid-template-columns: 1fr; }
+      .movement-left { max-height: none; }
       main { padding: 12px; }
     }
   </style>
@@ -811,114 +799,103 @@ async function renderDashboard(){
         <button id="loadBtn">Actualizar tablero</button>
       </div>
 
-      <div class="dashboard-shell">
-        <aside class="dashboard-left">
-          <p class="sheet-title">Fichas por item</p>
-          <p class="sheet-subtitle">Simula hojas individuales del Kardex.</p>
-          <input id="sheetSearch" class="sheet-search" type="text" placeholder="Buscar item..." />
-          <div class="btn-row" style="margin-bottom:8px">
-            <button id="clearSelection" style="width:auto;background:#5f7581">Quitar filtro lasso</button>
-          </div>
-          <div id="sheetList" class="sheet-list"></div>
-        </aside>
+      <div class="select-box">
+        <p class="select-title">Filtro inteligente por seleccion de area (lasso)</p>
+        <p class="help" style="margin-bottom:8px">Dibuje una forma libre para filtrar los indicadores a un grupo de items.</p>
+        <div class="btn-row" style="margin-bottom:8px">
+          <button id="clearSelection" style="width:auto;background:#5f7581">Quitar filtro lasso</button>
+        </div>
+        <div class="chart-wrap" style="height:260px"><div id="lassoPlot" style="width:100%;height:100%"></div></div>
+      </div>
 
-        <div class="dashboard-right">
-          <div class="select-box">
-            <p class="select-title">Filtro inteligente por seleccion de area (lasso)</p>
-            <p class="help" style="margin-bottom:8px">Dibuje una forma libre para filtrar los indicadores a un grupo de items.</p>
-            <div class="chart-wrap" style="height:260px"><div id="lassoPlot" style="width:100%;height:100%"></div></div>
+      <div class="item-sheet-card">
+        <div class="item-sheet-head">
+          <h3 id="sheetTitle" style="margin:0;color:#184d59;font-size:1rem">Ficha del item</h3>
+          <span id="sheetCoverage" class="badge">-</span>
+        </div>
+        <div id="sheetKpis" class="item-sheet-kpis"></div>
+        <div class="analytics-grid">
+          <div class="chart-card">
+            <p class="chart-title">Evolucion diaria del stock del item</p>
+            <div class="chart-wrap"><canvas id="chartItemStock"></canvas></div>
           </div>
-
-          <div class="item-sheet-card">
-            <div class="item-sheet-head">
-              <h3 id="sheetTitle" style="margin:0;color:#184d59;font-size:1rem">Ficha del item</h3>
-              <span id="sheetCoverage" class="badge">-</span>
-            </div>
-            <div id="sheetKpis" class="item-sheet-kpis"></div>
-            <div class="analytics-grid">
-              <div class="chart-card">
-                <p class="chart-title">Evolucion diaria del stock del item</p>
-                <div class="chart-wrap"><canvas id="chartItemStock"></canvas></div>
-              </div>
-              <div class="chart-card">
-                <p class="chart-title">Entradas vs salidas diarias del item</p>
-                <div class="chart-wrap"><canvas id="chartItemFlow"></canvas></div>
-              </div>
-            </div>
+          <div class="chart-card">
+            <p class="chart-title">Entradas vs salidas diarias del item</p>
+            <div class="chart-wrap"><canvas id="chartItemFlow"></canvas></div>
           </div>
-
-          <div class="analytics-grid" id="analyticsGrid">
-            <div class="chart-card">
-              <p class="chart-title">Consumo acumulado por servicio (Top 10)</p>
-              <div class="chart-wrap"><canvas id="chartService"></canvas></div>
-            </div>
-            <div class="chart-card">
-              <p class="chart-title">Items criticos por cobertura (dias)</p>
-              <div class="chart-wrap"><canvas id="chartCoverage"></canvas></div>
-            </div>
-            <div class="chart-card">
-              <p class="chart-title">Stock total diario del grupo filtrado</p>
-              <div class="chart-wrap"><canvas id="chartSeries"></canvas></div>
-            </div>
-            <div class="chart-card">
-              <p class="chart-title">Flujo acumulado (entradas vs salidas)</p>
-              <div class="chart-wrap"><canvas id="chartFlow"></canvas></div>
-            </div>
-          </div>
-
-          <div class="manager-box">
-            <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">Control gerencial de abastecimiento</h3>
-            <p class="help" style="margin-bottom:8px">Resumen para jefatura: stock al corte, ritmo de consumo y cobertura estimada por item.</p>
-            <div id="managerKpis" class="manager-kpis"></div>
-            <div id="managerAlerts" class="insights"></div>
-            <div id="managerTable" class="table"></div>
-          </div>
-
-          <div class="semaforo-box">
-            <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">Semaforo clinico de reposicion</h3>
-            <p class="help" style="margin-bottom:8px">Clasifica cada item por stock a fecha de corte para priorizar reposicion (rojo primero).</p>
-            <div class="semaforo-head">
-              <div class="field">
-                <label style="margin-top:0">Umbral rojo (critico)</label>
-                <input id="semRojo" type="number" min="0" step="1" />
-              </div>
-              <div class="field">
-                <label style="margin-top:0">Umbral amarillo (alerta)</label>
-                <input id="semAmarillo" type="number" min="0" step="1" />
-              </div>
-              <button id="semApply" style="width:auto">Aplicar semaforo</button>
-              <button id="semReset" style="width:auto;background:#5b7480">Restablecer</button>
-            </div>
-            <div id="semKpis" class="semaforo-kpis"></div>
-            <div id="semPills" class="semaforo-pills"></div>
-            <div id="semTable" class="table"></div>
-          </div>
-
-          <div class="service-box">
-            <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">Semaforo por area / servicio</h3>
-            <p class="help" style="margin-bottom:8px">Prioriza areas con mayor consumo (salidas) durante el mes seleccionado.</p>
-            <div class="semaforo-head">
-              <div class="field">
-                <label style="margin-top:0">Amarillo desde</label>
-                <input id="semAreaAmarillo" type="number" min="0" step="1" />
-              </div>
-              <div class="field">
-                <label style="margin-top:0">Rojo desde</label>
-                <input id="semAreaRojo" type="number" min="0" step="1" />
-              </div>
-              <button id="semAreaApply" style="width:auto">Aplicar</button>
-              <button id="semAreaReset" style="width:auto;background:#5b7480">Restablecer</button>
-            </div>
-            <div id="semAreaKpis" class="semaforo-kpis"></div>
-            <div id="semAreaTable" class="table"></div>
-          </div>
-
-          <details style="margin-top:12px">
-            <summary style="cursor:pointer;font-weight:800;color:#184d59">Ver detalle diario completo por item</summary>
-            <div id="dashTable" class="table" style="margin-top:10px"></div>
-          </details>
         </div>
       </div>
+
+      <div class="analytics-grid" id="analyticsGrid">
+        <div class="chart-card">
+          <p class="chart-title">Consumo acumulado por servicio (Top 10)</p>
+          <div class="chart-wrap"><canvas id="chartService"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <p class="chart-title">Items criticos por cobertura (dias)</p>
+          <div class="chart-wrap"><canvas id="chartCoverage"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <p class="chart-title">Stock total diario del grupo filtrado</p>
+          <div class="chart-wrap"><canvas id="chartSeries"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <p class="chart-title">Flujo acumulado (entradas vs salidas)</p>
+          <div class="chart-wrap"><canvas id="chartFlow"></canvas></div>
+        </div>
+      </div>
+
+      <div class="manager-box">
+        <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">Control gerencial de abastecimiento</h3>
+        <p class="help" style="margin-bottom:8px">Resumen para jefatura: stock al corte, ritmo de consumo y cobertura estimada por item.</p>
+        <div id="managerKpis" class="manager-kpis"></div>
+        <div id="managerAlerts" class="insights"></div>
+        <div id="managerTable" class="table"></div>
+      </div>
+
+      <div class="semaforo-box">
+        <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">Semaforo clinico de reposicion</h3>
+        <p class="help" style="margin-bottom:8px">Clasifica cada item por stock a fecha de corte para priorizar reposicion (rojo primero).</p>
+        <div class="semaforo-head">
+          <div class="field">
+            <label style="margin-top:0">Umbral rojo (critico)</label>
+            <input id="semRojo" type="number" min="0" step="1" />
+          </div>
+          <div class="field">
+            <label style="margin-top:0">Umbral amarillo (alerta)</label>
+            <input id="semAmarillo" type="number" min="0" step="1" />
+          </div>
+          <button id="semApply" style="width:auto">Aplicar semaforo</button>
+          <button id="semReset" style="width:auto;background:#5b7480">Restablecer</button>
+        </div>
+        <div id="semKpis" class="semaforo-kpis"></div>
+        <div id="semPills" class="semaforo-pills"></div>
+        <div id="semTable" class="table"></div>
+      </div>
+
+      <div class="service-box">
+        <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">Semaforo por area / servicio</h3>
+        <p class="help" style="margin-bottom:8px">Prioriza areas con mayor consumo (salidas) durante el mes seleccionado.</p>
+        <div class="semaforo-head">
+          <div class="field">
+            <label style="margin-top:0">Amarillo desde</label>
+            <input id="semAreaAmarillo" type="number" min="0" step="1" />
+          </div>
+          <div class="field">
+            <label style="margin-top:0">Rojo desde</label>
+            <input id="semAreaRojo" type="number" min="0" step="1" />
+          </div>
+          <button id="semAreaApply" style="width:auto">Aplicar</button>
+          <button id="semAreaReset" style="width:auto;background:#5b7480">Restablecer</button>
+        </div>
+        <div id="semAreaKpis" class="semaforo-kpis"></div>
+        <div id="semAreaTable" class="table"></div>
+      </div>
+
+      <details style="margin-top:12px">
+        <summary style="cursor:pointer;font-weight:800;color:#184d59">Ver detalle diario completo por item</summary>
+        <div id="dashTable" class="table" style="margin-top:10px"></div>
+      </details>
     </section>`;
 
   document.getElementById('semRojo').value = state.semaforo.rojo;
@@ -975,14 +952,6 @@ async function renderDashboard(){
       renderDashboardPanels();
     }
   };
-  document.getElementById('sheetSearch').oninput=()=>{
-    if(!state.dashboardRaw) return;
-    const out=getFilteredDashboardOut(state.dashboardRaw);
-    const model=buildCutoffModel(out);
-    ensureSelectedSheetItem(model);
-    renderSheetMenu(model);
-  };
-
   document.getElementById('loadBtn').onclick=async()=>{ await loadDashboard(); };
   await loadDashboard();
 }
@@ -1203,38 +1172,6 @@ function ensureSelectedSheetItem(model){
   )[0];
   state.selectedSheetItem=String((critical && critical.item_code) || rows[0].item_code || '');
   localStorage.setItem('kardex_selected_item', state.selectedSheetItem);
-}
-
-function renderSheetMenu(model){
-  const list=document.getElementById('sheetList');
-  const search=document.getElementById('sheetSearch');
-  if(!list) return;
-  const q=String((search && search.value) || '').trim().toLowerCase();
-  const rows=((model && model.rows) || [])
-    .filter(r=>{
-      if(!q) return true;
-      return String(r.item_code).toLowerCase().includes(q) || String(r.item_name||'').toLowerCase().includes(q);
-    })
-    .sort((a,b)=>String(a.item_code).localeCompare(String(b.item_code)));
-
-  list.innerHTML = rows.map(r=>{
-    const active=String(r.item_code)===String(state.selectedSheetItem||'');
-    return `
-      <button class="sheet-tab ${active?'active':''}" data-code="${escAttr(r.item_code)}">
-        <div class="main">
-          <span>${esc(r.item_code)}</span>
-          <span>${fmt(r.cutoff_balance)}</span>
-        </div>
-        <div class="sub">${esc(r.item_name)}</div>
-      </button>`;
-  }).join('');
-  [...list.querySelectorAll('.sheet-tab')].forEach(btn=>{
-    btn.onclick=()=>{
-      state.selectedSheetItem=String(btn.getAttribute('data-code')||'');
-      localStorage.setItem('kardex_selected_item', state.selectedSheetItem);
-      renderDashboardPanels();
-    };
-  });
 }
 
 function getSelectedItemModel(out, model){
@@ -1634,7 +1571,6 @@ function renderDashboardPanels(){
   if(!out) return;
   const model=buildCutoffModel(out);
   ensureSelectedSheetItem(model);
-  renderSheetMenu(model);
 
   const k=calcKpis(out, model);
     document.getElementById('kpi').innerHTML=`
@@ -1683,59 +1619,74 @@ function renderMovements(){
   const services=(state.bootstrap && state.bootstrap.services)||[];
   const today = new Date().toISOString().slice(0,10);
 
+  if(!state.selectedSheetItem && items.length){
+    state.selectedSheetItem=String(items[0].item_code||'');
+    localStorage.setItem('kardex_selected_item', state.selectedSheetItem);
+  }
+
   app.innerHTML=`
   <section class="card">
     <h2>${VIEW_LABELS.movements}</h2>
     <p class="help">Complete los datos y confirme. El registro se guarda de forma inmediata en la planilla.</p>
 
-    <div class="steps">
-      <div class="step"><b>Paso 1:</b> Seleccione si es entrada o salida.</div>
-      <div class="step"><b>Paso 2:</b> Cargue fecha, item, servicio y cantidad.</div>
-      <div class="step"><b>Paso 3:</b> Presione <b>Guardar movimiento</b>.</div>
-    </div>
+    <div class="movement-shell">
+      <aside class="movement-left">
+        <h3>Panel lateral por item</h3>
+        <p>Seleccione el item como en las hojas del Excel.</p>
+        <input id="movementItemSearch" type="text" placeholder="Buscar item..." />
+        <div id="movementItemList" class="movement-item-list" style="margin-top:8px"></div>
+      </aside>
 
-    <label>Tipo de movimiento</label>
-    <div class="move-type">
-      <button id="btnOut" class="type-btn exit active">Salida de insumo</button>
-      <button id="btnIn" class="type-btn entry">Entrada de insumo</button>
-    </div>
+      <div>
+        <div class="steps">
+          <div class="step"><b>Paso 1:</b> Seleccione si es entrada o salida.</div>
+          <div class="step"><b>Paso 2:</b> Elija item en panel lateral y cargue los datos.</div>
+          <div class="step"><b>Paso 3:</b> Presione <b>Guardar movimiento</b>.</div>
+        </div>
 
-    <div class="note" id="moveHelp">Salida: descuenta unidades del stock.</div>
+        <label>Tipo de movimiento</label>
+        <div class="move-type">
+          <button id="btnOut" class="type-btn exit active">Salida de insumo</button>
+          <button id="btnIn" class="type-btn entry">Entrada de insumo</button>
+        </div>
 
-    <div class="grid">
-      <div>
-        <label>Fecha</label>
-        <input id="m_date" type="date" value="${today}"/>
-      </div>
-      <div>
-        <label>Item</label>
-        <input id="m_item_search" type="text" placeholder="Buscar item por codigo o descripcion" />
-        <select id="m_item">${items.map(i=>`<option value="${escAttr(i.item_code)}">${esc(i.item_code)} - ${esc(i.item_name)}</option>`).join('')}</select>
-      </div>
-      <div>
-        <label>Servicio</label>
-        <input id="m_service_search" type="text" placeholder="Buscar servicio" />
-        <select id="m_service">${services.map(s=>`<option value="${escAttr(s.service_name)}">${esc(s.service_name)}</option>`).join('')}</select>
-      </div>
-      <div>
-        <label>Cantidad</label>
-        <input id="m_qty" type="number" min="1" placeholder="Ejemplo: 10"/>
-        <div class="btn-row" style="margin-top:6px">
-          <button type="button" class="quick-qty" data-v="5" style="width:auto;background:#4f7f8e">+5</button>
-          <button type="button" class="quick-qty" data-v="10" style="width:auto;background:#4f7f8e">+10</button>
-          <button type="button" class="quick-qty" data-v="20" style="width:auto;background:#4f7f8e">+20</button>
-          <button type="button" class="quick-qty" data-v="50" style="width:auto;background:#4f7f8e">+50</button>
+        <div class="note" id="moveHelp">Salida: descuenta unidades del stock.</div>
+
+        <div class="grid">
+          <div>
+            <label>Fecha</label>
+            <input id="m_date" type="date" value="${today}"/>
+          </div>
+          <div>
+            <label>Item seleccionado</label>
+            <select id="m_item">${items.map(i=>`<option value="${escAttr(i.item_code)}">${esc(i.item_code)} - ${esc(i.item_name)}</option>`).join('')}</select>
+          </div>
+          <div>
+            <label>Servicio</label>
+            <input id="m_service_search" type="text" placeholder="Buscar servicio" />
+            <select id="m_service">${services.map(s=>`<option value="${escAttr(s.service_name)}">${esc(s.service_name)}</option>`).join('')}</select>
+          </div>
+          <div>
+            <label>Cantidad</label>
+            <input id="m_qty" type="number" min="1" placeholder="Ejemplo: 10"/>
+            <div class="btn-row" style="margin-top:6px">
+              <button type="button" class="quick-qty" data-v="5" style="width:auto;background:#4f7f8e">+5</button>
+              <button type="button" class="quick-qty" data-v="10" style="width:auto;background:#4f7f8e">+10</button>
+              <button type="button" class="quick-qty" data-v="20" style="width:auto;background:#4f7f8e">+20</button>
+              <button type="button" class="quick-qty" data-v="50" style="width:auto;background:#4f7f8e">+50</button>
+            </div>
+          </div>
+          <div>
+            <label>Nro. boleta / ticket (opcional)</label>
+            <input id="m_ticket" type="text" placeholder="Ejemplo: 1234"/>
+          </div>
+          <div>
+            <label>Nota (opcional)</label>
+            <textarea id="m_notes" placeholder="Observaciones"></textarea>
+          </div>
+          <button id="saveMove" class="save">Guardar movimiento</button>
         </div>
       </div>
-      <div>
-        <label>Nro. boleta / ticket (opcional)</label>
-        <input id="m_ticket" type="text" placeholder="Ejemplo: 1234"/>
-      </div>
-      <div>
-        <label>Nota (opcional)</label>
-        <textarea id="m_notes" placeholder="Observaciones"></textarea>
-      </div>
-      <button id="saveMove" class="save">Guardar movimiento</button>
     </div>
   </section>`;
 
@@ -1755,8 +1706,9 @@ function renderMovements(){
   document.getElementById('btnIn').onclick=()=>setType('IN');
   const itemSelect=document.getElementById('m_item');
   const serviceSelect=document.getElementById('m_service');
-  const allItemOptions=[...itemSelect.options].map(o=>({value:o.value,text:o.text}));
   const allServiceOptions=[...serviceSelect.options].map(o=>({value:o.value,text:o.text}));
+  const itemMap={};
+  items.forEach(i=>{ itemMap[String(i.item_code)] = i; });
 
   function refillSelect(sel, opts){
     const cur=sel.value;
@@ -1765,11 +1717,52 @@ function renderMovements(){
     if(has) sel.value=cur;
   }
 
-  document.getElementById('m_item_search').addEventListener('input',(e)=>{
-    const q=String(e.target.value||'').trim().toLowerCase();
-    const filtered=allItemOptions.filter(o=>o.text.toLowerCase().includes(q));
-    refillSelect(itemSelect, filtered.length?filtered:allItemOptions);
-  });
+  function colorFromItemCode(code){
+    const s=String(code||'');
+    let h=0;
+    for(let i=0;i<s.length;i++) h=(h*33 + s.charCodeAt(i)) % 360;
+    return { border:`hsl(${h}, 58%, 45%)`, bg:`hsl(${h}, 72%, 96%)` };
+  }
+
+  function renderMovementItemList(){
+    const host=document.getElementById('movementItemList');
+    if(!host) return;
+    const q=String(document.getElementById('movementItemSearch').value||'').trim().toLowerCase();
+    const filtered=items.filter(i=>{
+      if(!q) return true;
+      const t=`${i.item_code} ${i.item_name}`.toLowerCase();
+      return t.includes(q);
+    });
+    host.innerHTML=filtered.map(i=>{
+      const active=String(i.item_code)===String(itemSelect.value);
+      const c=colorFromItemCode(i.item_code);
+      return `<button class="movement-item ${active?'active':''}" data-code="${escAttr(i.item_code)}" style="border-left-color:${c.border};background:${active?c.bg:'#f9fcfd'}">
+        <div class="main"><span>${esc(i.item_code)}</span></div>
+        <div class="sub">${esc(i.item_name)}</div>
+      </button>`;
+    }).join('');
+    [...host.querySelectorAll('.movement-item')].forEach(btn=>{
+      btn.onclick=()=>{
+        const code=String(btn.getAttribute('data-code')||'');
+        itemSelect.value=code;
+        state.selectedSheetItem=code;
+        localStorage.setItem('kardex_selected_item', code);
+        renderMovementItemList();
+      };
+    });
+  }
+
+  if(state.selectedSheetItem && itemMap[state.selectedSheetItem]){
+    itemSelect.value=state.selectedSheetItem;
+  }
+  itemSelect.onchange=()=>{
+    state.selectedSheetItem=String(itemSelect.value||'');
+    localStorage.setItem('kardex_selected_item', state.selectedSheetItem);
+    renderMovementItemList();
+  };
+  document.getElementById('movementItemSearch').oninput=renderMovementItemList;
+  renderMovementItemList();
+
   document.getElementById('m_service_search').addEventListener('input',(e)=>{
     const q=String(e.target.value||'').trim().toLowerCase();
     const filtered=allServiceOptions.filter(o=>o.text.toLowerCase().includes(q));
