@@ -564,3 +564,220 @@ function importHistoricoMarzo2026_(sourceSpreadsheetId) {
   audit_('IMPORT', 'Historical', '2026-03', `items=${itemRows.length}, movements=${movements.length}`, 'system_import');
   return { items: itemRows.length, movements: movements.length, sourceSpreadsheetId };
 }
+
+function importHistoricoDetalladoMarzo2026_(sourceSpreadsheetId) {
+  ensureSchema_();
+  const tz = Session.getScriptTimeZone();
+  const source = SpreadsheetApp.openById(sourceSpreadsheetId);
+  const stock = source.getSheetByName('STOCK_ACUMULADO_DIARIO');
+  const resumen = source.getSheetByName('ResumenMENSUALcierrediario');
+  if (!stock || !resumen) throw new Error('Source sheets not found');
+
+  const codeRows = stock.getRange(3, 1, 40, 2).getValues();
+  const items = [];
+  let idx = 0;
+  for (let i = 0; i < codeRows.length; i++) {
+    const rawCode = codeRows[i][0];
+    const rawName = codeRows[i][1];
+    if (!rawCode) continue;
+
+    let code = String(rawCode).trim();
+    if (typeof rawCode === 'number') code = String(Math.trunc(rawCode));
+    const name = String(rawName || '').trim();
+
+    const resumenRow = 15 + idx * 3;
+    const balances = resumen.getRange(resumenRow, 7, 1, 31).getValues()[0].map((v) => Number(v || 0));
+    idx++;
+    if (!balances[0]) continue;
+    items.push({ code, name, balances, initialStock: balances[0] });
+  }
+
+  const servicesSet = {};
+  const allMovements = [];
+  let adjustmentsIn = 0;
+  let adjustmentsOut = 0;
+
+  items.forEach((item) => {
+    const sheetName = item.code === 'GUANTES' ? 'Guantes' : 'ITEM' + item.code;
+    const ws = source.getSheetByName(sheetName);
+    const outByDay = {};
+
+    if (ws) {
+      const lastCol = ws.getLastColumn();
+      const lastRow = Math.min(ws.getLastRow(), 1200);
+      const headers = ws.getRange(8, 1, 1, lastCol).getValues()[0];
+      const serviceCols = [];
+      for (let c = 4; c <= lastCol; c++) {
+        const h = normalizeServiceName_(headers[c - 1]);
+        if (!h) continue;
+        if (h === 'SERVICIOS' || h === 'TOTAL DIA' || h === 'TOTAL') continue;
+        serviceCols.push({ col: c, name: h });
+        servicesSet[h] = true;
+      }
+
+      if (serviceCols.length > 0 && lastRow >= 9) {
+        const table = ws.getRange(9, 1, lastRow - 8, lastCol).getValues();
+        for (let r = 0; r < table.length; r++) {
+          const row = table[r];
+          const dateCell = row[0];
+          if (String(dateCell || '').toUpperCase().indexOf('TOTAL') >= 0) break;
+          if (!(dateCell instanceof Date)) continue;
+          if (dateCell.getFullYear() !== 2026 || dateCell.getMonth() !== 2) continue;
+
+          const day = dateCell.getDate();
+          const moveDate = Utilities.formatDate(new Date(2026, 2, day), tz, 'yyyy-MM-dd');
+          const ticket = String(row[1] || '').trim().slice(0, 80);
+          let outSum = 0;
+
+          serviceCols.forEach((s) => {
+            const rawQty = row[s.col - 1];
+            const qty = Number(rawQty || 0);
+            if (!Number.isFinite(qty) || qty <= 0) return;
+            const q = Math.round(qty);
+            if (!q) return;
+
+            allMovements.push([
+              Utilities.getUuid(),
+              moveDate,
+              item.code,
+              s.name,
+              'OUT',
+              q,
+              ticket,
+              `Detalle servicio desde ${sheetName}`,
+              'system_import',
+              new Date().toISOString()
+            ]);
+            outSum += q;
+          });
+
+          outByDay[day] = (outByDay[day] || 0) + outSum;
+        }
+      }
+    }
+
+    for (let d = 2; d <= 31; d++) {
+      const prev = Number(item.balances[d - 2] || 0);
+      const curr = Number(item.balances[d - 1] || 0);
+      const delta = curr - prev;
+      const outMeasured = Number(outByDay[d] || 0);
+      const inNeeded = delta + outMeasured;
+      const moveDate = Utilities.formatDate(new Date(2026, 2, d), tz, 'yyyy-MM-dd');
+
+      if (inNeeded > 0) {
+        const q = Math.round(inNeeded);
+        if (q > 0) {
+          const svc = 'REPROCESO / INGRESO';
+          servicesSet[svc] = true;
+          allMovements.push([
+            Utilities.getUuid(),
+            moveDate,
+            item.code,
+            svc,
+            'IN',
+            q,
+            '',
+            'Ajuste para cuadrar saldo diario',
+            'system_import',
+            new Date().toISOString()
+          ]);
+          adjustmentsIn += q;
+        }
+      } else if (inNeeded < 0) {
+        const q = Math.round(Math.abs(inNeeded));
+        if (q > 0) {
+          const svc = 'AJUSTE SISTEMA';
+          servicesSet[svc] = true;
+          allMovements.push([
+            Utilities.getUuid(),
+            moveDate,
+            item.code,
+            svc,
+            'OUT',
+            q,
+            '',
+            'Ajuste negativo para cuadrar saldo diario',
+            'system_import',
+            new Date().toISOString()
+          ]);
+          adjustmentsOut += q;
+        }
+      }
+    }
+  });
+
+  const itemsWs = getSheet_(SHEETS.ITEMS.name, SHEETS.ITEMS.headers);
+  const servicesWs = getSheet_(SHEETS.SERVICES.name, SHEETS.SERVICES.headers);
+  const movementsWs = getSheet_(SHEETS.MOVEMENTS.name, SHEETS.MOVEMENTS.headers);
+
+  if (itemsWs.getLastRow() > 1) itemsWs.getRange(2, 1, itemsWs.getLastRow() - 1, SHEETS.ITEMS.headers.length).clearContent();
+  if (servicesWs.getLastRow() > 1) servicesWs.getRange(2, 1, servicesWs.getLastRow() - 1, SHEETS.SERVICES.headers.length).clearContent();
+  if (movementsWs.getLastRow() > 1) movementsWs.getRange(2, 1, movementsWs.getLastRow() - 1, SHEETS.MOVEMENTS.headers.length).clearContent();
+
+  const nowIso = new Date().toISOString();
+  if (items.length) {
+    const itemData = items.map((i) => [i.code, i.name, i.initialStock, true, nowIso]);
+    itemsWs.getRange(2, 1, itemData.length, SHEETS.ITEMS.headers.length).setValues(itemData);
+  }
+
+  const serviceList = Object.keys(servicesSet).sort();
+  if (serviceList.length) {
+    const svcData = serviceList.map((s) => [s, true, nowIso]);
+    servicesWs.getRange(2, 1, svcData.length, SHEETS.SERVICES.headers.length).setValues(svcData);
+  }
+
+  if (allMovements.length) {
+    movementsWs.getRange(2, 1, allMovements.length, SHEETS.MOVEMENTS.headers.length).setValues(allMovements);
+  }
+
+  audit_(
+    'IMPORT',
+    'HistoricalDetailed',
+    '2026-03',
+    `items=${items.length}, services=${serviceList.length}, movements=${allMovements.length}, inAdj=${adjustmentsIn}, outAdj=${adjustmentsOut}`,
+    'system_import'
+  );
+
+  return {
+    items: items.length,
+    services: serviceList.length,
+    movements: allMovements.length,
+    adjustmentsIn,
+    adjustmentsOut,
+    sourceSpreadsheetId
+  };
+}
+
+function normalizeServiceName_(v) {
+  const s = String(v || '').trim();
+  if (!s) return '';
+  const cleaned = s
+    .normalize('NFD')
+    .replace(/[\\u0300-\\u036f]/g, '')
+    .replace(/\\s+/g, ' ')
+    .toUpperCase()
+    .trim();
+  return cleaned;
+}
+
+function replaceDataForImport_(payload) {
+  ensureSchema_();
+  const items = (payload && payload.items) || [];
+  const services = (payload && payload.services) || [];
+  const movements = (payload && payload.movements) || [];
+
+  const itemsWs = getSheet_(SHEETS.ITEMS.name, SHEETS.ITEMS.headers);
+  const servicesWs = getSheet_(SHEETS.SERVICES.name, SHEETS.SERVICES.headers);
+  const movementsWs = getSheet_(SHEETS.MOVEMENTS.name, SHEETS.MOVEMENTS.headers);
+
+  if (itemsWs.getLastRow() > 1) itemsWs.getRange(2, 1, itemsWs.getLastRow() - 1, SHEETS.ITEMS.headers.length).clearContent();
+  if (servicesWs.getLastRow() > 1) servicesWs.getRange(2, 1, servicesWs.getLastRow() - 1, SHEETS.SERVICES.headers.length).clearContent();
+  if (movementsWs.getLastRow() > 1) movementsWs.getRange(2, 1, movementsWs.getLastRow() - 1, SHEETS.MOVEMENTS.headers.length).clearContent();
+
+  if (items.length) itemsWs.getRange(2, 1, items.length, SHEETS.ITEMS.headers.length).setValues(items);
+  if (services.length) servicesWs.getRange(2, 1, services.length, SHEETS.SERVICES.headers.length).setValues(services);
+  if (movements.length) movementsWs.getRange(2, 1, movements.length, SHEETS.MOVEMENTS.headers.length).setValues(movements);
+
+  audit_('IMPORT', 'HistoricalDetailed', '2026-03', `replace_data items=${items.length}, services=${services.length}, movements=${movements.length}`, 'system_import');
+  return { items: items.length, services: services.length, movements: movements.length };
+}
