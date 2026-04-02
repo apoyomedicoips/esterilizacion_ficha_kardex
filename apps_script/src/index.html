@@ -1360,14 +1360,90 @@ function renderLassoSelector(raw){
 }
 
 function destroyDashboardCharts(){
-  if(!state.charts) state.charts=[];
-  state.charts.forEach(ch=>{ try{ ch.destroy(); }catch(_e){} });
-  state.charts=[];
+  const ids=['chartService','chartCoverage','chartSeries','chartFlow','chartItemStock','chartItemFlow'];
+  ids.forEach(id=>{
+    const c=document.getElementById(id);
+    if(!c) return;
+    const ctx=c.getContext && c.getContext('2d');
+    if(!ctx) return;
+    ctx.clearRect(0,0,c.width||0,c.height||0);
+  });
 }
 
 function colorRamp(i){
   const palette=['#0b5f6d','#1d8091','#2c9bb0','#62b8c8','#97d3dc','#f39a6b','#e66f51','#c44a3f','#7fb069','#4f8f5f','#8b7bd1','#aa8bd7'];
   return palette[i%palette.length];
+}
+
+function fitCanvas(canvas){
+  if(!canvas) return null;
+  const ratio=window.devicePixelRatio || 1;
+  const w=Math.max(320, canvas.clientWidth || 600);
+  const h=Math.max(180, canvas.clientHeight || 240);
+  canvas.width=Math.floor(w*ratio);
+  canvas.height=Math.floor(h*ratio);
+  const ctx=canvas.getContext('2d');
+  if(!ctx) return null;
+  ctx.setTransform(ratio,0,0,ratio,0,0);
+  ctx.clearRect(0,0,w,h);
+  return {ctx,w,h};
+}
+
+function drawBarChart(canvas, labels, values, color, title){
+  const m=fitCanvas(canvas); if(!m) return;
+  const {ctx,w,h}=m;
+  const pad={l:40,r:10,t:20,b:34};
+  const plotW=w-pad.l-pad.r, plotH=h-pad.t-pad.b;
+  const max=Math.max(1, ...values.map(v=>Number(v||0)));
+  const n=Math.max(1, values.length);
+  const bw=Math.max(6, Math.min(36, plotW/(n*1.6)));
+  ctx.fillStyle='#1a4f5a'; ctx.font='12px Segoe UI'; if(title) ctx.fillText(title, pad.l, 14);
+  values.forEach((v,i)=>{
+    const x=pad.l + (i+0.5)*plotW/n - bw/2;
+    const y=pad.t + plotH - (Number(v||0)/max)*plotH;
+    const hh=pad.t+plotH-y;
+    ctx.fillStyle=Array.isArray(color)?(color[i]||'#2d8bba'):color;
+    ctx.fillRect(x,y,bw,hh);
+  });
+}
+
+function drawGroupedBars(canvas, labels, series){
+  const m=fitCanvas(canvas); if(!m) return;
+  const {ctx,w,h}=m;
+  const pad={l:42,r:10,t:20,b:34};
+  const plotW=w-pad.l-pad.r, plotH=h-pad.t-pad.b;
+  let max=1;
+  series.forEach(s=>s.values.forEach(v=>{ max=Math.max(max, Number(v||0)); }));
+  const n=Math.max(1, labels.length), g=Math.max(1, series.length);
+  const groupW=plotW/n, bw=Math.max(4, Math.min(14, groupW/(g+1)));
+  series.forEach((s,si)=>{
+    s.values.forEach((v,i)=>{
+      const x=pad.l + i*groupW + 4 + si*bw;
+      const y=pad.t + plotH - (Number(v||0)/max)*plotH;
+      ctx.fillStyle=s.color; ctx.fillRect(x,y,bw,pad.t+plotH-y);
+    });
+  });
+}
+
+function drawLineChart(canvas, labels, series){
+  const m=fitCanvas(canvas); if(!m) return;
+  const {ctx,w,h}=m;
+  const pad={l:40,r:10,t:14,b:26};
+  const plotW=w-pad.l-pad.r, plotH=h-pad.t-pad.b;
+  let max=1;
+  series.forEach(s=>s.values.forEach(v=>{ if(v!=null) max=Math.max(max, Number(v||0)); }));
+  const n=Math.max(2, labels.length);
+  series.forEach(s=>{
+    ctx.strokeStyle=s.color; ctx.lineWidth=2; ctx.beginPath();
+    let started=false;
+    s.values.forEach((v,i)=>{
+      if(v==null) return;
+      const x=pad.l + i*plotW/(n-1);
+      const y=pad.t + plotH - (Number(v||0)/max)*plotH;
+      if(!started){ ctx.moveTo(x,y); started=true; } else ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+  });
 }
 
 function buildDashboardAnalytics(out, model){
@@ -1447,7 +1523,6 @@ function renderItemSheet(out, model){
 
 function renderDashboardCharts(out, model){
   destroyDashboardCharts();
-  if(typeof Chart==='undefined') return;
 
   const a=buildDashboardAnalytics(out, model);
   const days=(out.days||[]).map(d=>String(d));
@@ -1460,124 +1535,31 @@ function renderDashboardCharts(out, model){
   const itemStockCtx=document.getElementById('chartItemStock');
   const itemFlowCtx=document.getElementById('chartItemFlow');
   if(!serviceCtx||!coverageCtx||!seriesCtx||!flowCtx||!itemStockCtx||!itemFlowCtx) return;
-
-  function pushChart(ctx, config){
-    try { state.charts.push(new Chart(ctx, config)); }
-    catch(_e){ /* evitamos que una grafica rompa todo el tablero */ }
-  }
-
-  pushChart(serviceCtx,{
-    type:'bar',
-    data:{
-      labels:a.serviceTop.map(r=>r.service_name),
-      datasets:[{
-        label:'Salidas acumuladas',
-        data:a.serviceTop.map(r=>Number(r.out_qty||0)),
-        backgroundColor:a.serviceTop.map((_,i)=>colorRamp(i+2))
-      }]
-    },
-    options:{
-      indexAxis:'y',
-      responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ display:false } },
-      scales:{ x:{ beginAtZero:true } }
-    }
-  });
-
-  pushChart(coverageCtx,{
-    type:'bar',
-    data:{
-      labels:a.topItems.map(r=>r.code),
-      datasets:[
-        { label:'Stock inicial', data:a.topItems.map(r=>r.start), backgroundColor:'#2d8bba' },
-        { label:'Entradas', data:a.topItems.map(r=>r.ins), backgroundColor:'#2f9e70' },
-        { label:'Salidas', data:a.topItems.map(r=>r.outs), backgroundColor:'#d9654b' },
-        { label:'Saldo final', data:a.topItems.map(r=>r.end), backgroundColor:'#7c4dff' }
-      ]
-    },
-    options:{
-      responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ position:'bottom' } },
-      scales:{ y:{ beginAtZero:true } }
-    }
-  });
-
-  pushChart(seriesCtx,{
-    type:'line',
-    data:{
-      labels:days,
-      datasets:[{
-        label:'Stock total diario',
-        data:a.totalByDay,
-        fill:true,
-        borderColor:'#0b5f6d',
-        backgroundColor:'rgba(11,95,109,0.14)',
-        tension:.25,
-        pointRadius:2
-      }]
-    },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } } }
-  });
-
-  pushChart(flowCtx,{
-    type:'line',
-    data:{
-      labels:days,
-      datasets:[
-        {
-          label:'Entradas acumuladas',
-          data:(model && model.cumulativeIn) || [],
-          borderColor:'#2f9e70',
-          backgroundColor:'rgba(47,158,112,0.1)',
-          tension:.22,
-          pointRadius:2
-        },
-        {
-          label:'Salidas acumuladas',
-          data:(model && model.cumulativeOut) || [],
-          borderColor:'#d9654b',
-          backgroundColor:'rgba(217,101,75,0.1)',
-          tension:.22,
-          pointRadius:2
-        }
-      ]
-    },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } }
-  });
+  drawBarChart(
+    serviceCtx,
+    a.serviceTop.map(r=>r.service_name),
+    a.serviceTop.map(r=>Number(r.out_qty||0)),
+    a.serviceTop.map((_,i)=>colorRamp(i+2)),
+    'Salidas por servicio'
+  );
+  drawGroupedBars(coverageCtx, a.topItems.map(r=>r.code), [
+    {color:'#2d8bba', values:a.topItems.map(r=>r.start)},
+    {color:'#2f9e70', values:a.topItems.map(r=>r.ins)},
+    {color:'#d9654b', values:a.topItems.map(r=>r.outs)},
+    {color:'#7c4dff', values:a.topItems.map(r=>r.end)}
+  ]);
+  drawLineChart(seriesCtx, days, [{color:'#0b5f6d', values:a.totalByDay}]);
+  drawLineChart(flowCtx, days, [
+    {color:'#2f9e70', values:(model && model.cumulativeIn) || []},
+    {color:'#d9654b', values:(model && model.cumulativeOut) || []}
+  ]);
 
   if(itemData){
-    pushChart(itemStockCtx,{
-      type:'line',
-      data:{
-        labels:itemData.labels,
-        datasets:[{
-          label:`Stock diario ${itemData.row.item_code}`,
-          data:itemData.stockSeries,
-          borderColor:'#137184',
-          backgroundColor:'rgba(19,113,132,0.14)',
-          fill:true,
-          tension:.2,
-          pointRadius:2
-        }]
-      },
-      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } } }
-    });
-
-    pushChart(itemFlowCtx,{
-      type:'bar',
-      data:{
-        labels:itemData.labels,
-        datasets:[
-          { label:'Entradas', data:itemData.inSeries, backgroundColor:'#2f9e70' },
-          { label:'Salidas', data:itemData.outSeries, backgroundColor:'#d9654b' }
-        ]
-      },
-      options:{
-        responsive:true, maintainAspectRatio:false,
-        plugins:{ legend:{ position:'bottom' } },
-        scales:{ x:{ stacked:true }, y:{ stacked:true, beginAtZero:true } }
-      }
-    });
+    drawLineChart(itemStockCtx, itemData.labels, [{color:'#137184', values:itemData.stockSeries}]);
+    drawGroupedBars(itemFlowCtx, itemData.labels, [
+      {color:'#2f9e70', values:itemData.inSeries},
+      {color:'#d9654b', values:itemData.outSeries}
+    ]);
   }
 }
 
