@@ -654,6 +654,7 @@ const state = {
   currentView: 'dashboard',
   movementType: 'OUT',
   charts: [],
+  dashboardTableKey: '',
   closureRaw: null,
   closureMonth: '',
   closureCache: {},
@@ -930,8 +931,9 @@ async function renderDashboard(){
         <div id="semAreaTable" class="table"></div>
       </div>
 
-      <details style="margin-top:12px">
+      <details id="dashDetails" style="margin-top:12px">
         <summary style="cursor:pointer;font-weight:800;color:#184d59">Ver detalle diario completo por item</summary>
+        <p id="dashTableHint" class="help" style="margin:8px 0 0">Abra este bloque para generar la tabla completa.</p>
         <div id="dashTable" class="table" style="margin-top:10px"></div>
       </details>
     </section>`;
@@ -991,6 +993,14 @@ async function renderDashboard(){
     }
   };
   document.getElementById('loadBtn').onclick=async()=>{ await loadDashboard(); };
+  const dashDetails=document.getElementById('dashDetails');
+  if(dashDetails){
+    dashDetails.addEventListener('toggle',()=>{
+      if(dashDetails.open){
+        renderDashboardDetailTable(state.dashboard);
+      }
+    });
+  }
   await loadDashboard();
 }
 
@@ -1877,19 +1887,60 @@ async function loadDashboard(){
       const kept=new Set([...state.selectedItems].filter(x=>validItems.has(x)));
       state.selectedItems = kept.size ? kept : null;
     }
-    renderLassoSelector(out);
     renderDashboardPanels();
+    setTimeout(()=>renderLassoSelector(out), 0);
   }catch(e){ showMsg(e); }
+}
+
+function getDashboardDetailKey(out){
+  if(!out) return '';
+  const month=String(out.month||'');
+  const rows=(out.rows||[]).length;
+  const days=(out.days||[]).length;
+  const filterCount=state.selectedItems ? state.selectedItems.size : 0;
+  return `${month}|${rows}|${days}|${filterCount}`;
+}
+
+function renderDashboardDetailTable(out){
+  const holder=document.getElementById('dashTable');
+  const hint=document.getElementById('dashTableHint');
+  const details=document.getElementById('dashDetails');
+  if(!holder || !details || !details.open || !out) return;
+
+  const key=getDashboardDetailKey(out);
+  if(state.dashboardTableKey===key && holder.innerHTML.trim()) return;
+
+  const head=['<th>Item</th><th>Descripcion</th><th>Inicio</th>'];
+  (out.days||[]).forEach(d=>head.push(`<th>${d}</th>`));
+  head.push('<th>Final</th>');
+
+  const rows=(out.rows||[]).map(r=>{
+    const t=[
+      `<td><strong>${esc(r.item_code)}</strong></td>`,
+      `<td>${esc(r.item_name)}</td>`,
+      `<td>${fmt(r.start_balance)}</td>`
+    ];
+    (r.day_values||[]).forEach(v=>t.push(`<td>${fmt(v)}</td>`));
+    t.push(`<td><strong>${fmt(r.end_balance)}</strong></td>`);
+    return `<tr>${t.join('')}</tr>`;
+  }).join('');
+
+  holder.innerHTML=`<table><thead><tr>${head.join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+  state.dashboardTableKey=key;
+  if(hint) hint.textContent='Detalle generado para el filtro y fecha de corte actuales.';
 }
 
 function renderDashboardPanels(){
   const out=getFilteredDashboardOut(state.dashboardRaw);
   if(!out) return;
+  state.dashboard=out;
   const model=buildCutoffModel(out);
   ensureSelectedSheetItem(model);
   if(!(model.rows||[]).length){
     document.getElementById('insights').innerHTML=`<span class="insight-chip alert">No hay items en el filtro actual. Quite el filtro lasso para ver el tablero completo.</span>`;
-    document.getElementById('dashTable').innerHTML='';
+    const dashTable=document.getElementById('dashTable');
+    if(dashTable) dashTable.innerHTML='';
+    state.dashboardTableKey='';
     destroyDashboardCharts();
     return;
   }
@@ -1911,29 +1962,12 @@ function renderDashboardPanels(){
       <span class="insight-chip">Run-rate diario: ${fmt(Math.round(k.runRate))}</span>
       ${state.selectedItems?`<span class="insight-chip alert">Filtro lasso activo: ${state.selectedItems.size} item(s)</span>`:''}
       <span class="insight-chip">Ficha activa: ${esc(state.selectedSheetItem || '-')}</span>`;
-
-    const head=['<th>Item</th><th>Descripcion</th><th>Inicio</th>'];
-    out.days.forEach(d=>head.push(`<th>${d}</th>`));
-    head.push('<th>Final</th>');
-
-    const rows=out.rows.map(r=>{
-      const t=[
-        `<td><strong>${esc(r.item_code)}</strong></td>`,
-        `<td>${esc(r.item_name)}</td>`,
-        `<td>${fmt(r.start_balance)}</td>`
-      ];
-      r.day_values.forEach(v=>t.push(`<td>${fmt(v)}</td>`));
-      t.push(`<td><strong>${fmt(r.end_balance)}</strong></td>`);
-      return `<tr>${t.join('')}</tr>`;
-    }).join('');
-
-    document.getElementById('dashTable').innerHTML=`<table><thead><tr>${head.join('')}</tr></thead><tbody>${rows}</tbody></table>`;
   renderItemSheet(out, model);
   requestAnimationFrame(()=>renderDashboardCharts(out, model));
-  setTimeout(()=>renderDashboardCharts(out, model), 120);
   renderManagerPanel(out, model, k);
   renderSemaforo(model);
   renderSemaforoArea(model);
+  renderDashboardDetailTable(out);
 }
 
 function renderMovements(){

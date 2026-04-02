@@ -115,6 +115,16 @@ function getDashboard(payload) {
   const parsed = parseMonth_(month);
   const year = parsed.year;
   const mon = parsed.month;
+  const monthKey = Utilities.formatDate(new Date(year, mon - 1, 1), Session.getScriptTimeZone(), 'yyyy-MM');
+  const cacheKey = 'DASH_V4_' + monthKey + '_' + getMovementsFingerprint_();
+  const scriptCache = CacheService.getScriptCache();
+  const cached = scriptCache.get(cacheKey);
+  if (cached) return JSON.parse(cached);
+  const persisted = getPersistedCache_(cacheKey);
+  if (persisted) {
+    scriptCache.put(cacheKey, JSON.stringify(persisted), 300);
+    return persisted;
+  }
 
   const firstDay = new Date(year, mon - 1, 1);
   const lastDay = new Date(year, mon, 0);
@@ -123,11 +133,11 @@ function getDashboard(payload) {
   for (let d = 1; d <= daysInMonth; d++) days.push(d);
 
   const items = listItems_().filter((i) => i.active);
-  const movements = listMovements_();
+  const movements = getMovementsFastRowsWithService_();
 
   const netBefore = {};
   const delta = {};
-  const monthMovements = [];
+  const monthItemDayAgg = {};
   const serviceAgg = {};
 
   movements.forEach((m) => {
@@ -150,16 +160,14 @@ function getDashboard(payload) {
     const key = itemCode + '|' + day;
     delta[key] = (delta[key] || 0) + sign * qty;
 
-    const service = String(m.service_name || '').trim().toUpperCase();
-    monthMovements.push({
-      movement_date: m.movement_date,
-      day: day,
-      item_code: itemCode,
-      service_name: service,
-      move_type: m.move_type,
-      quantity: qty
-    });
+    const dayKey = itemCode + '|' + day;
+    if (!monthItemDayAgg[dayKey]) {
+      monthItemDayAgg[dayKey] = { item_code: itemCode, day: day, in_qty: 0, out_qty: 0 };
+    }
+    if (m.move_type === 'IN') monthItemDayAgg[dayKey].in_qty += qty;
+    if (m.move_type === 'OUT') monthItemDayAgg[dayKey].out_qty += qty;
 
+    const service = String(m.service_name || '').trim().toUpperCase();
     if (!serviceAgg[service]) {
       serviceAgg[service] = { in_qty: 0, out_qty: 0 };
     }
@@ -193,14 +201,35 @@ function getDashboard(payload) {
     }))
     .sort((a, b) => b.out_qty - a.out_qty);
 
-  return {
+  const monthMovements = [];
+  Object.keys(monthItemDayAgg).forEach((k) => {
+    const r = monthItemDayAgg[k];
+    if (r.in_qty > 0) {
+      monthMovements.push({ day: r.day, item_code: r.item_code, move_type: 'IN', quantity: r.in_qty });
+    }
+    if (r.out_qty > 0) {
+      monthMovements.push({ day: r.day, item_code: r.item_code, move_type: 'OUT', quantity: r.out_qty });
+    }
+  });
+  monthMovements.sort((a, b) => Number(a.day || 0) - Number(b.day || 0) || String(a.item_code).localeCompare(String(b.item_code)));
+
+  const recentLite = getRecentMovementsLite_(300);
+
+  const out = {
     month: Utilities.formatDate(firstDay, Session.getScriptTimeZone(), 'yyyy-MM'),
     days,
     rows,
-    recent: movements.slice(0, 200),
+    recent: recentLite,
     month_movements: monthMovements,
     service_summary: serviceSummary
   };
+  try {
+    scriptCache.put(cacheKey, JSON.stringify(out), 300);
+  } catch (_e) {
+    // ignore cache errors
+  }
+  setPersistedCache_(cacheKey, out);
+  return out;
 }
 
 function getMonthlyClosure(payload) {
@@ -539,6 +568,49 @@ function getMovementsFastRows_() {
   return out;
 }
 
+function getMovementsFastRowsWithService_() {
+  const ws = getSheet_(SHEETS.MOVEMENTS.name, SHEETS.MOVEMENTS.headers);
+  const lastRow = ws.getLastRow();
+  if (lastRow < 2) return [];
+
+  // Columns: B movement_date, C item_code, D service_name, E move_type, F quantity
+  const values = ws.getRange(2, 2, lastRow - 1, 5).getValues();
+  const out = [];
+  for (let i = 0; i < values.length; i++) {
+    const r = values[i];
+    const movementDate = r[0];
+    const itemCode = String(r[1] || '').trim();
+    const serviceName = String(r[2] || '').trim();
+    const moveType = String(r[3] || '').toUpperCase();
+    const qty = Number(r[4] || 0);
+    if (!itemCode || !qty) continue;
+    if (!(moveType === 'IN' || moveType === 'OUT')) continue;
+    out.push({
+      movement_date: movementDate,
+      item_code: itemCode,
+      service_name: serviceName,
+      move_type: moveType,
+      quantity: qty
+    });
+  }
+  return out;
+}
+
+function getRecentMovementsLite_(limit) {
+  const ws = getSheet_(SHEETS.MOVEMENTS.name, SHEETS.MOVEMENTS.headers);
+  const lastRow = ws.getLastRow();
+  if (lastRow < 2) return [];
+  const n = Math.max(1, Math.min(Number(limit || 300), lastRow - 1));
+  const start = lastRow - n + 1;
+  // Only movement_date (B)
+  const values = ws.getRange(start, 2, n, 1).getValues();
+  const out = [];
+  for (let i = values.length - 1; i >= 0; i--) {
+    out.push({ movement_date: normalizeDateValue_(values[i][0]) });
+  }
+  return out;
+}
+
 function getMovementsFingerprint_() {
   const ws = getSheet_(SHEETS.MOVEMENTS.name, SHEETS.MOVEMENTS.headers);
   const lastRow = ws.getLastRow();
@@ -553,7 +625,7 @@ function fillZeros_(n) {
   return out;
 }
 
-function getPersistedClosureCache_(key) {
+function getPersistedCache_(key) {
   const props = PropertiesService.getScriptProperties();
   const raw = props.getProperty('PERSIST_' + key);
   if (!raw) return null;
@@ -564,13 +636,21 @@ function getPersistedClosureCache_(key) {
   }
 }
 
-function setPersistedClosureCache_(key, value) {
+function setPersistedCache_(key, value) {
   const props = PropertiesService.getScriptProperties();
   try {
     props.setProperty('PERSIST_' + key, JSON.stringify(value));
   } catch (_e) {
     // Ignore if size limit is reached.
   }
+}
+
+function getPersistedClosureCache_(key) {
+  return getPersistedCache_(key);
+}
+
+function setPersistedClosureCache_(key, value) {
+  setPersistedCache_(key, value);
 }
 
 function listAudit_(limit) {
