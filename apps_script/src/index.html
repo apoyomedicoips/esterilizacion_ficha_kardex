@@ -753,6 +753,7 @@ const VIEW_LABELS = {
   services: 'Catalogo de proveedores',
   consumers: 'Catalogo de dependencias',
   profile: 'Mi cuenta',
+  manual: 'Manual de usuario',
   config: 'Configuracion',
   audit: 'Auditoria'
 };
@@ -807,6 +808,7 @@ function render(){
   if(state.currentView==='services') renderServices();
   if(state.currentView==='consumers') renderConsumers();
   if(state.currentView==='profile') renderProfile();
+  if(state.currentView==='manual') renderManual();
   if(state.currentView==='config') renderConfig();
   if(state.currentView==='audit') renderAudit();
 }
@@ -878,6 +880,7 @@ function renderShell(){
   addMenuBtn(menu,'Estimacion','estimation',()=>{state.currentView='estimation';render();});
   if(canWrite) addMenuBtn(menu,'Registrar','movements',()=>{state.currentView='movements';render();});
   addMenuBtn(menu,'Mi cuenta','profile',()=>{state.currentView='profile';render();});
+  addMenuBtn(menu,'Manual','manual',()=>{state.currentView='manual';render();});
   initHeaderMonthInput();
   if(isAdmin){
     addMenuBtn(menu,'Items','items',()=>{state.currentView='items';render();});
@@ -3158,6 +3161,105 @@ function renderProfile(){
       document.getElementById('p_new2').value='';
     }catch(e){ showMsg(e); }
   };
+}
+
+function renderManual(){
+  const app=document.getElementById('app');
+  app.innerHTML=`
+  <section class="card">
+    <h2>${VIEW_LABELS.manual}</h2>
+    <p class="help">Guia practica para enfermeria. Siga estos pasos exactamente para evitar errores y mantener el kardex correcto.</p>
+
+    <div class="note" style="margin-bottom:10px">
+      <strong>Regla de oro:</strong> cada movimiento debe registrarse el mismo dia que ocurre, con item correcto, tipo correcto (Entrada/Salida) y proveedor/dependencia correcta.
+    </div>
+
+    <div class="manager-box">
+      <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">1) Ingreso al sistema</h3>
+      <ol style="margin:0;padding-left:18px">
+        <li>Abra la aplicacion y escriba su usuario y contrasena.</li>
+        <li>Presione <strong>Entrar al sistema</strong>.</li>
+        <li>Verifique arriba que aparezca su nombre de usuario.</li>
+        <li>Si es su primera vez, cambie su clave en <strong>Mi cuenta</strong>.</li>
+      </ol>
+    </div>
+
+    <div class="manager-box">
+      <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">2) Registrar una ENTRADA (cuando llega material)</h3>
+      <ol style="margin:0;padding-left:18px">
+        <li>Entre en <strong>Registrar</strong>.</li>
+        <li>Seleccione <strong>Entrada de insumo</strong>.</li>
+        <li>Elija la <strong>fecha</strong>.</li>
+        <li>Elija el <strong>item</strong>.</li>
+        <li>En proveedor, use <strong>CONSORCIO CDB</strong> (o otro proveedor si corresponde).</li>
+        <li>Ingrese la <strong>cantidad</strong> recibida.</li>
+        <li>Presione <strong>Registrar entrada</strong>.</li>
+      </ol>
+      <p class="small">Importante: si el proveedor no existe en catálogo, solicite crearlo en <strong>Catalogo de proveedores</strong>.</p>
+    </div>
+
+    <div class="manager-box">
+      <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">3) Registrar una SALIDA (cuando se consume material)</h3>
+      <ol style="margin:0;padding-left:18px">
+        <li>Entre en <strong>Registrar</strong>.</li>
+        <li>Seleccione <strong>Salida de insumo</strong>.</li>
+        <li>Elija la <strong>fecha</strong>.</li>
+        <li>Elija el <strong>item</strong>.</li>
+        <li>Seleccione la <strong>dependencia consumidora</strong> (ejemplo: quirófano, urgencias, etc.).</li>
+        <li>Ingrese la <strong>cantidad</strong> entregada/consumida.</li>
+        <li>Presione <strong>Registrar salida</strong>.</li>
+      </ol>
+      <p class="small">Importante: para salida solo se permiten dependencias del catálogo <strong>Catalogo de dependencias</strong>.</p>
+    </div>
+
+    <div class="manager-box">
+      <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">4) Revisar stock y reportes diarios</h3>
+      <ol style="margin:0;padding-left:18px">
+        <li>Abra <strong>Tablero</strong> para ver el stock por item y los indicadores.</li>
+        <li>Use <strong>Cierre mensual</strong> para ver: stock inicial, entradas, salidas y saldo final.</li>
+        <li>Use <strong>Seguimiento</strong> para revisar movimientos por día y continuidad con mes anterior.</li>
+      </ol>
+    </div>
+
+    <div class="manager-box">
+      <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">5) Calcular pedido sugerido (consumo 10 dias)</h3>
+      <ol style="margin:0;padding-left:18px">
+        <li>Abra <strong>Estimacion 10 dias</strong>.</li>
+        <li>Seleccione el <strong>mes</strong>.</li>
+        <li>Elija bloque de 10 días del mes actual (1-10, 11-20, 21-fin).</li>
+        <li>Elija bloque del mes anterior (o automático).</li>
+        <li>Elija el <strong>dia de stock actual</strong>.</li>
+        <li>Revise la columna <strong>Pedido</strong>: ese es el sugerido por item.</li>
+        <li>Si necesita enviar informe, use <strong>Exportar pedido Excel</strong> o <strong>Generar pedido Word</strong>.</li>
+      </ol>
+    </div>
+
+    <div class="manager-box">
+      <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">6) Seguridad de datos (resumen)</h3>
+      <ul style="margin:0;padding-left:18px">
+        <li>Cada movimiento se guarda en el libro en línea y también en copia de seguridad CSV.</li>
+        <li>Si falla la copia CSV, el sistema revierte el movimiento para no dejar datos incompletos.</li>
+        <li>Los cambios importantes quedan registrados en auditoría con fecha, hora y usuario.</li>
+      </ul>
+    </div>
+
+    <div class="semaforo-box">
+      <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">Errores comunes y solucion rapida</h3>
+      <table>
+        <thead><tr><th>Problema</th><th>Causa probable</th><th>Que hacer</th></tr></thead>
+        <tbody>
+          <tr><td>No me deja guardar entrada</td><td>Proveedor no registrado</td><td>Pida crear proveedor en Catalogo de proveedores</td></tr>
+          <tr><td>No me deja guardar salida</td><td>Dependencia no registrada</td><td>Pida crear dependencia en Catalogo de dependencias</td></tr>
+          <tr><td>No veo datos del mes</td><td>Mes equivocado o sin movimientos</td><td>Cambie el mes en el selector superior</td></tr>
+          <tr><td>No puedo entrar</td><td>Clave incorrecta</td><td>Verifique mayúsculas/minúsculas o solicite restablecimiento</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note" style="margin-top:10px">
+      <strong>Buena práctica diaria:</strong> al finalizar turno, revise <strong>Cierre mensual</strong> y confirme que las salidas/entradas del día estén completas.
+    </div>
+  </section>`;
 }
 
 async function renderConfig(){
