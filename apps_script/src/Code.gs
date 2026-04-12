@@ -418,6 +418,8 @@ function createMovement(payload) {
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(movementDate)) throw new Error('Fecha invalida');
   if (!itemCode) throw new Error('Item requerido');
+  const itemExists = listItems_().some((i) => String(i.item_code || '').toUpperCase() === itemCode && i.active);
+  if (!itemExists) throw new Error('Item no registrado o inactivo. Verifique el catalogo de items.');
   if (moveType === 'IN' && !serviceName) {
     serviceName = CONFIG.DEFAULT_PROVIDER;
   }
@@ -685,6 +687,8 @@ function updateMovement(payload) {
   if (!movementId) throw new Error('ID de movimiento requerido');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(movementDate)) throw new Error('Fecha invalida');
   if (!itemCode) throw new Error('Item requerido');
+  const itemExists = listItems_().some((i) => String(i.item_code || '').toUpperCase() === itemCode && i.active);
+  if (!itemExists) throw new Error('Item no registrado o inactivo. Verifique el catalogo de items.');
   if (moveType === 'IN' && !serviceName) serviceName = CONFIG.DEFAULT_PROVIDER;
   if (!serviceName) throw new Error('Proveedor/area requerido');
   if (!(moveType === 'IN' || moveType === 'OUT')) throw new Error('Tipo invalido');
@@ -933,6 +937,7 @@ function ensureSchema_() {
   getSheet_(SHEETS.MOVEMENTS.name, SHEETS.MOVEMENTS.headers);
   getSheet_(SHEETS.LAUNDRY.name, SHEETS.LAUNDRY.headers);
   getSheet_(SHEETS.AUDIT.name, SHEETS.AUDIT.headers);
+  ensureDefaultItems_();
   ensureDefaultProviders_();
   ensureDefaultConsumers_();
   ensureDefaultUsers_();
@@ -1492,6 +1497,14 @@ function ensureDefaultConsumers_() {
     return;
   }
   ws.appendRow(['DEPENDENCIA GENERAL', true, nowIso]);
+}
+
+function ensureDefaultItems_() {
+  const items = listItems_();
+  const hasGuantes = items.some((i) => String(i.item_code || '').toUpperCase() === 'GUANTES');
+  if (hasGuantes) return;
+  const ws = getSheet_(SHEETS.ITEMS.name, SHEETS.ITEMS.headers);
+  ws.appendRow(['GUANTES', 'GUANTES', 0, true, new Date().toISOString()]);
 }
 
 function requireMasterAdmin_(session) {
