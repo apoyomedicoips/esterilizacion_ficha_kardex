@@ -717,6 +717,24 @@
   </div>
 
 <script>
+function _bootEsc(v){
+  return String(v==null?'':v).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+}
+function _bootFatal(msg){
+  try{
+    const app=document.getElementById('app');
+    if(!app) return;
+    app.innerHTML=`<section class="card narrow"><h2>Error de carga</h2><p class="help">${_bootEsc(msg)}</p><p class="small">Recargue la pagina. Si persiste, reporte este mensaje al administrador.</p></section>`;
+  }catch(_e){}
+}
+window.addEventListener('error', (e)=>{
+  _bootFatal('JavaScript: ' + String((e && e.message) || 'error inesperado'));
+});
+window.addEventListener('unhandledrejection', (e)=>{
+  const reason = e && e.reason ? (e.reason.message || String(e.reason)) : 'promesa rechazada';
+  _bootFatal('Asincrono: ' + String(reason));
+});
+
 const _ls = (() => {
   try {
     const t = '__kardex_ls_test__';
