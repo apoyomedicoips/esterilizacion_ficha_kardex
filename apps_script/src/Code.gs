@@ -93,7 +93,13 @@ function doGet() {
 }
 
 function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+  const name = String(filename == null ? '' : filename).trim();
+  if (!name) return '';
+  try {
+    return HtmlService.createHtmlOutputFromFile(name).getContent();
+  } catch (_e) {
+    return '';
+  }
 }
 
 function getBootstrap(token) {
