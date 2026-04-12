@@ -171,6 +171,13 @@
 
     button:hover { filter: brightness(1.06); }
     button:active { transform: translateY(1px); }
+    .small-btn {
+      width: auto;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      background: #0f6780;
+    }
 
     .btn-row {
       display: flex;
@@ -732,6 +739,9 @@ const state = {
   trackingRaw: null,
   trackingCache: {},
   trackingPedidoExport: null,
+  editMonth: localStorage.getItem('kardex_edit_month') || '',
+  editRaw: null,
+  editSelectedId: '',
   estimationMonth: '',
   semaforo: {
     rojo: Number(localStorage.getItem('kardex_sem_rojo') || 50),
@@ -752,6 +762,7 @@ const VIEW_LABELS = {
   items: 'Catalogo de items',
   services: 'Catalogo de proveedores',
   consumers: 'Catalogo de dependencias',
+  edit: 'Editar movimientos',
   profile: 'Mi cuenta',
   manual: 'Manual de usuario',
   config: 'Configuracion',
@@ -804,6 +815,7 @@ function render(){
   if(state.currentView==='movements') renderMovements();
   if(state.currentView==='tracking') renderTracking();
   if(state.currentView==='estimation') renderEstimation();
+  if(state.currentView==='edit') renderEditMovements();
   if(state.currentView==='items') renderItems();
   if(state.currentView==='services') renderServices();
   if(state.currentView==='consumers') renderConsumers();
@@ -879,6 +891,7 @@ function renderShell(){
   addMenuBtn(menu,'Seguimiento','tracking',()=>{state.currentView='tracking';render();});
   addMenuBtn(menu,'Estimacion','estimation',()=>{state.currentView='estimation';render();});
   if(canWrite) addMenuBtn(menu,'Registrar','movements',()=>{state.currentView='movements';render();});
+  if(canWrite) addMenuBtn(menu,'Editar','edit',()=>{state.currentView='edit';render();});
   addMenuBtn(menu,'Mi cuenta','profile',()=>{state.currentView='profile';render();});
   addMenuBtn(menu,'Manual','manual',()=>{state.currentView='manual';render();});
   initHeaderMonthInput();
@@ -3018,6 +3031,229 @@ function renderMovements(){
     }catch(e){ showMsg(e); }
   };
   setType(state.movementType||'OUT');
+}
+
+async function renderEditMovements(){
+  const app=document.getElementById('app');
+  const monthDefault=state.editMonth || getCurrentMonth();
+  state.editMonth=monthDefault;
+  const items=(state.bootstrap && state.bootstrap.items)||[];
+  const providers=(state.bootstrap && (state.bootstrap.providers||state.bootstrap.services))||[];
+  const consumers=(state.bootstrap && state.bootstrap.consumers)||[];
+
+  app.innerHTML=`
+  <section class="card">
+    <h2>${VIEW_LABELS.edit}</h2>
+    <p class="help">Seleccione un movimiento ya guardado, edite los datos necesarios y presione guardar. Cada cambio queda auditado con usuario y fecha/hora.</p>
+    <div class="inline">
+      <div>
+        <label>Mes de busqueda</label>
+        <input id="e_month" type="month" value="${monthDefault}"/>
+      </div>
+      <button id="e_load">Cargar movimientos</button>
+    </div>
+    <div id="e_header" class="note" style="margin-bottom:8px"></div>
+    <div id="e_table" class="table" style="max-height:48vh;overflow:auto"></div>
+  </section>
+
+  <section class="card" id="e_formCard" style="display:none">
+    <h2>Editar movimiento seleccionado</h2>
+    <p class="help">Solo se actualiza este registro puntual. El sistema registra quien lo edito y cuando.</p>
+    <div class="grid">
+      <div>
+        <label>ID movimiento</label>
+        <input id="e_id" type="text" readonly/>
+      </div>
+      <div>
+        <label>Registrado por</label>
+        <input id="e_user" type="text" readonly/>
+      </div>
+      <div>
+        <label>Fecha de registro</label>
+        <input id="e_created" type="text" readonly/>
+      </div>
+      <div>
+        <label>Fecha movimiento</label>
+        <input id="e_date" type="date"/>
+      </div>
+      <div>
+        <label>Item</label>
+        <select id="e_item">${items.map(i=>`<option value="${escAttr(i.item_code)}">${esc(i.item_code)} - ${esc(i.item_name)}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label>Tipo</label>
+        <select id="e_type">
+          <option value="OUT">SALIDA</option>
+          <option value="IN">ENTRADA</option>
+        </select>
+      </div>
+      <div>
+        <label>Proveedor / Dependencia</label>
+        <select id="e_service"></select>
+      </div>
+      <div>
+        <label>Cantidad</label>
+        <input id="e_qty" type="number" min="1"/>
+      </div>
+      <div>
+        <label>Nro. boleta / ticket</label>
+        <input id="e_ticket" type="text"/>
+      </div>
+      <div style="grid-column:1/-1">
+        <label>Notas</label>
+        <textarea id="e_notes"></textarea>
+      </div>
+      <button id="e_save">Guardar cambios del movimiento</button>
+    </div>
+  </section>`;
+
+  const tbl=document.getElementById('e_table');
+  const header=document.getElementById('e_header');
+  const monthInput=document.getElementById('e_month');
+  const formCard=document.getElementById('e_formCard');
+  const serviceSel=document.getElementById('e_service');
+
+  function serviceOptionsByType(type){
+    if(type==='IN') return providers.map(p=>String(p.service_name||'')).filter(Boolean);
+    return consumers.map(c=>String(c.consumer_name||'')).filter(Boolean);
+  }
+
+  function refillServiceByType(type, selected){
+    const options=serviceOptionsByType(type);
+    if(!options.length){
+      serviceSel.innerHTML='<option value="">(Sin opciones)</option>';
+      return;
+    }
+    serviceSel.innerHTML=options.map(v=>`<option value="${escAttr(v)}">${esc(v)}</option>`).join('');
+    if(selected && options.includes(selected)) serviceSel.value=selected;
+  }
+
+  function renderTable(){
+    const rows=((state.editRaw && state.editRaw.rows) || []).slice();
+    const month=String((state.editRaw && state.editRaw.month) || monthInput.value || '');
+    const recent=rows.sort((a,b)=>String(b.movement_date||'').localeCompare(String(a.movement_date||'')));
+    header.innerHTML=`<strong>Mes:</strong> ${esc(month)} &nbsp;|&nbsp; <strong>Registros:</strong> ${fmt(recent.length)}`;
+    if(!recent.length){
+      tbl.innerHTML='<p class="help">No hay movimientos en este mes.</p>';
+      formCard.style.display='none';
+      state.editSelectedId='';
+      return;
+    }
+    tbl.innerHTML=`<table>
+      <thead><tr><th>Accion</th><th>Fecha</th><th>Item</th><th>Tipo</th><th>Proveedor/Dependencia</th><th>Cantidad</th><th>Ticket</th><th>Usuario</th><th>Creado</th></tr></thead>
+      <tbody>${recent.map(r=>{
+        const active=String(r.movement_id||'')===String(state.editSelectedId||'');
+        const t=String(r.move_type||'').toUpperCase();
+        const typeTag=t==='IN'
+          ? '<span class="badge" style="background:#e8f8ef;color:#0a7a55;border-color:#b8dec6">ENTRADA</span>'
+          : '<span class="badge" style="background:#fff1ed;color:#a23a1d;border-color:#efbeb0">SALIDA</span>';
+        return `<tr style="${active?'background:#eef8fb':''}">
+          <td><button class="small-btn e_edit_btn" data-id="${escAttr(r.movement_id)}">Editar</button></td>
+          <td>${esc(r.movement_date)}</td>
+          <td><strong>${esc(r.item_code)}</strong></td>
+          <td>${typeTag}</td>
+          <td>${esc(r.service_name)}</td>
+          <td style="text-align:right">${fmt(r.quantity)}</td>
+          <td>${esc(r.ticket_no||'')}</td>
+          <td>${esc(r.username||'')}</td>
+          <td>${esc(r.created_at||'')}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+    [...tbl.querySelectorAll('.e_edit_btn')].forEach(btn=>{
+      btn.onclick=()=>selectMovement(String(btn.getAttribute('data-id')||''));
+    });
+  }
+
+  function selectMovement(movementId){
+    const rows=(state.editRaw && state.editRaw.rows) || [];
+    const row=rows.find(r=>String(r.movement_id||'')===String(movementId||''));
+    if(!row){ showMsg('No se encontro el movimiento seleccionado.'); return; }
+    state.editSelectedId=String(row.movement_id||'');
+    document.getElementById('e_id').value=String(row.movement_id||'');
+    document.getElementById('e_user').value=String(row.username||'');
+    document.getElementById('e_created').value=String(row.created_at||'');
+    document.getElementById('e_date').value=String(row.movement_date||'');
+    document.getElementById('e_item').value=String(row.item_code||'');
+    const type=String(row.move_type||'OUT').toUpperCase()==='IN'?'IN':'OUT';
+    document.getElementById('e_type').value=type;
+    refillServiceByType(type, String(row.service_name||''));
+    document.getElementById('e_qty').value=String(Number(row.quantity||0)||'');
+    document.getElementById('e_ticket').value=String(row.ticket_no||'');
+    document.getElementById('e_notes').value=String(row.notes||'');
+    formCard.style.display='';
+    renderTable();
+    window.scrollTo({top:document.body.scrollHeight, behavior:'smooth'});
+  }
+
+  async function loadMonth(force){
+    const month=String(monthInput.value || getCurrentMonth());
+    if(!force && state.editRaw && state.editRaw.month===month){
+      renderTable();
+      return;
+    }
+    const out=await safeServer('listMovementsByMonth',{token:state.token,month});
+    state.editRaw=out;
+    state.editSelectedId='';
+    state.editMonth=month;
+    localStorage.setItem('kardex_edit_month', month);
+    renderTable();
+  }
+
+  document.getElementById('e_type').onchange=()=>{
+    const t=String(document.getElementById('e_type').value||'OUT').toUpperCase();
+    refillServiceByType(t, '');
+  };
+
+  document.getElementById('e_load').onclick=async()=>{
+    try{
+      await loadMonth(true);
+    }catch(e){ showMsg(e); }
+  };
+
+  document.getElementById('e_save').onclick=async()=>{
+    try{
+      const payload={
+        token:state.token,
+        movement_id:document.getElementById('e_id').value,
+        movement_date:document.getElementById('e_date').value,
+        item_code:document.getElementById('e_item').value,
+        move_type:document.getElementById('e_type').value,
+        service_name:document.getElementById('e_service').value,
+        quantity:Number(document.getElementById('e_qty').value||0),
+        ticket_no:document.getElementById('e_ticket').value,
+        notes:document.getElementById('e_notes').value
+      };
+      if(!payload.movement_id){ showMsg('Seleccione un movimiento para editar.'); return; }
+      if(!payload.movement_date){ showMsg('Seleccione la fecha.'); return; }
+      if(!payload.item_code){ showMsg('Seleccione el item.'); return; }
+      if(!payload.service_name){ showMsg('Seleccione proveedor/dependencia.'); return; }
+      if(!payload.quantity || payload.quantity<=0){ showMsg('Ingrese cantidad valida.'); return; }
+      await safeServer('updateMovement',payload);
+      const rows=(state.editRaw && state.editRaw.rows) || [];
+      const idx=rows.findIndex(r=>String(r.movement_id||'')===String(payload.movement_id));
+      if(idx>=0){
+        rows[idx].movement_date=payload.movement_date;
+        rows[idx].item_code=payload.item_code;
+        rows[idx].move_type=String(payload.move_type||'').toUpperCase();
+        rows[idx].service_name=payload.service_name;
+        rows[idx].quantity=Math.trunc(Number(payload.quantity||0));
+        rows[idx].ticket_no=String(payload.ticket_no||'');
+        rows[idx].notes=String(payload.notes||'');
+      }
+      invalidateDashboardClientCache();
+      state.closureCache={};
+      state.trackingCache={};
+      showMsg('Movimiento actualizado correctamente. Auditoria registrada.',true);
+      renderTable();
+    }catch(e){ showMsg(e); }
+  };
+
+  try{
+    await loadMonth(false);
+  }catch(e){
+    showMsg(e);
+  }
 }
 
 function renderItems(){

@@ -8,6 +8,7 @@ const CONFIG = {
   SESSION_PREFIX: 'SESSION_',
   USERS_PROP_KEY: 'KARDEX_USERS_JSON',
   PASSWORD_PEPPER_KEY: 'KARDEX_PASSWORD_PEPPER',
+  DATA_VERSION_KEY: 'KARDEX_DATA_VERSION',
   BACKUP_CSV_PROP_KEY: 'KARDEX_MOVEMENTS_BACKUP_CSV_ID',
   BACKUP_CSV_NAME: 'kardex_movements_backup.csv',
   DEFAULT_PROVIDER: 'CONSORCIO CDB',
@@ -137,7 +138,7 @@ function getDashboardInternal_(month) {
   const parsed = parseMonth_(month);
   const year = parsed.year;
   const mon = parsed.month;
-  const fingerprints = getMovementsFingerprint_() + '_' + getItemsFingerprint_();
+  const fingerprints = getMovementsFingerprint_() + '_' + getItemsFingerprint_() + '_' + getDataVersion_();
   const monthKey = Utilities.formatDate(new Date(year, mon - 1, 1), Session.getScriptTimeZone(), 'yyyy-MM');
   const cacheKey = buildCacheKey_('DASH_V6', monthKey, fingerprints);
   const scriptCache = CacheService.getScriptCache();
@@ -262,7 +263,7 @@ function getMonthlyClosure(payload) {
   const monthInput = String((payload && payload.month) || '').trim();
   const parsedInput = parseMonth_(monthInput);
   const monthKeyInput = Utilities.formatDate(new Date(parsedInput.year, parsedInput.month - 1, 1), Session.getScriptTimeZone(), 'yyyy-MM');
-  const fingerprint = getMovementsFingerprint_() + '_' + getItemsFingerprint_();
+  const fingerprint = getMovementsFingerprint_() + '_' + getItemsFingerprint_() + '_' + getDataVersion_();
   const cacheKey = buildCacheKey_('CLOSURE_V4', monthKeyInput, fingerprint);
   const cached = CacheService.getScriptCache().get(cacheKey);
   if (cached) return JSON.parse(cached);
@@ -436,6 +437,7 @@ function createMovement(payload) {
     audit_('ERROR', 'MovementBackupCSV', itemCode, String(e && e.message ? e.message : e), session.username);
     throw new Error('No se pudo guardar la copia de seguridad CSV. El movimiento fue revertido.');
   }
+  bumpDataVersion_();
 
   audit_('CREATE', 'Movement', itemCode, `${moveType} qty=${quantity} provider_or_area=${serviceName}`, session.username);
   return { ok: true };
@@ -453,6 +455,7 @@ function createItem(payload) {
 
   const ws = getSheet_(SHEETS.ITEMS.name, SHEETS.ITEMS.headers);
   ws.appendRow([code, name, Math.trunc(initialStock), true, new Date().toISOString()]);
+  bumpDataVersion_();
   audit_('CREATE', 'Item', code, name, session.username);
   return { ok: true };
 }
@@ -467,6 +470,7 @@ function createService(payload) {
 
   const ws = getSheet_(SHEETS.SERVICES.name, SHEETS.SERVICES.headers);
   ws.appendRow([serviceName, true, new Date().toISOString()]);
+  bumpDataVersion_();
   audit_('CREATE', 'Provider', serviceName, '', session.username);
   return { ok: true };
 }
@@ -479,7 +483,126 @@ function createConsumer(payload) {
   if (exists) throw new Error('Dependencia ya existe');
   const ws = getSheet_(SHEETS.CONSUMERS.name, SHEETS.CONSUMERS.headers);
   ws.appendRow([name, true, new Date().toISOString()]);
+  bumpDataVersion_();
   audit_('CREATE', 'Consumer', name, '', session.username);
+  return { ok: true };
+}
+
+function listMovementsByMonth(payload) {
+  const token = payload && payload.token;
+  requireSession_(token, ['admin', 'operator']);
+  const month = String((payload && payload.month) || '').trim();
+  const parsed = parseMonth_(month);
+  const first = new Date(parsed.year, parsed.month - 1, 1);
+  const last = new Date(parsed.year, parsed.month, 0);
+
+  const rows = listMovements_().filter((m) => {
+    const d = parseDateSafe_(m.movement_date);
+    if (!d) return false;
+    return d >= first && d <= last;
+  });
+  rows.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  return {
+    month: Utilities.formatDate(first, Session.getScriptTimeZone(), 'yyyy-MM'),
+    rows: rows
+  };
+}
+
+function updateMovement(payload) {
+  const session = requireSession_(payload && payload.token, ['admin', 'operator']);
+  const movementId = String((payload && payload.movement_id) || '').trim();
+  const movementDate = String((payload && payload.movement_date) || '').trim();
+  const itemCode = String((payload && payload.item_code) || '').trim().toUpperCase();
+  let serviceName = String((payload && payload.service_name) || '').trim().toUpperCase();
+  const moveType = String((payload && payload.move_type) || '').trim().toUpperCase();
+  const quantity = Number((payload && payload.quantity) || 0);
+  const ticketNo = String((payload && payload.ticket_no) || '').trim().slice(0, 80);
+  const notes = String((payload && payload.notes) || '').trim().slice(0, 1000);
+
+  if (!movementId) throw new Error('ID de movimiento requerido');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(movementDate)) throw new Error('Fecha invalida');
+  if (!itemCode) throw new Error('Item requerido');
+  if (moveType === 'IN' && !serviceName) serviceName = CONFIG.DEFAULT_PROVIDER;
+  if (!serviceName) throw new Error('Proveedor/area requerido');
+  if (!(moveType === 'IN' || moveType === 'OUT')) throw new Error('Tipo invalido');
+  if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('Cantidad invalida');
+
+  if (moveType === 'IN') {
+    const providers = listProviders_().map((s) => String(s.service_name || '').toUpperCase());
+    if (providers.indexOf(serviceName) === -1) {
+      throw new Error('Proveedor no registrado. Agreguelo en Catalogo de proveedores.');
+    }
+  } else {
+    const consumers = listConsumers_().map((s) => String(s.consumer_name || '').toUpperCase());
+    if (consumers.indexOf(serviceName) === -1) {
+      throw new Error('Dependencia consumidora no registrada. Agreguela en Catalogo de dependencias.');
+    }
+  }
+
+  const ws = getSheet_(SHEETS.MOVEMENTS.name, SHEETS.MOVEMENTS.headers);
+  const lastRow = ws.getLastRow();
+  if (lastRow < 2) throw new Error('No hay movimientos para editar');
+  const ids = ws.getRange(2, 1, lastRow - 1, 1).getValues();
+  let rowNum = -1;
+  for (let i = 0; i < ids.length; i++) {
+    if (String(ids[i][0] || '') === movementId) {
+      rowNum = i + 2;
+      break;
+    }
+  }
+  if (rowNum < 2) throw new Error('Movimiento no encontrado');
+
+  const rowOld = ws.getRange(rowNum, 1, 1, SHEETS.MOVEMENTS.headers.length).getValues()[0];
+  const oldObj = {
+    movement_id: String(rowOld[0] || ''),
+    movement_date: normalizeDateValue_(rowOld[1]),
+    item_code: String(rowOld[2] || ''),
+    service_name: String(rowOld[3] || ''),
+    move_type: String(rowOld[4] || ''),
+    quantity: Number(rowOld[5] || 0),
+    ticket_no: String(rowOld[6] || ''),
+    notes: String(rowOld[7] || '')
+  };
+
+  ws.getRange(rowNum, 2, 1, 7).setValues([[
+    movementDate,
+    itemCode,
+    serviceName,
+    moveType,
+    Math.trunc(quantity),
+    ticketNo,
+    notes
+  ]]);
+  try {
+    rebuildMovementBackupCsvFromSheet_();
+  } catch (e) {
+    // Rollback sheet update if backup cannot be rebuilt.
+    ws.getRange(rowNum, 2, 1, 7).setValues([[
+      oldObj.movement_date,
+      oldObj.item_code,
+      oldObj.service_name,
+      oldObj.move_type,
+      Math.trunc(Number(oldObj.quantity || 0)),
+      oldObj.ticket_no,
+      oldObj.notes
+    ]]);
+    throw new Error('No se pudo actualizar la copia CSV de seguridad. La edicion fue revertida.');
+  }
+
+  bumpDataVersion_();
+
+  const newObj = {
+    movement_id: movementId,
+    movement_date: movementDate,
+    item_code: itemCode,
+    service_name: serviceName,
+    move_type: moveType,
+    quantity: Math.trunc(quantity),
+    ticket_no: ticketNo,
+    notes: notes
+  };
+  const changes = diffMovementForAudit_(oldObj, newObj);
+  audit_('UPDATE', 'Movement', movementId, `editor=${session.username}; changes=${changes}`, session.username);
   return { ok: true };
 }
 
@@ -843,6 +966,19 @@ function getPersistedCache_(key) {
   }
 }
 
+function getDataVersion_() {
+  const props = PropertiesService.getScriptProperties();
+  const raw = String(props.getProperty(CONFIG.DATA_VERSION_KEY) || '0').trim();
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? String(Math.trunc(n)) : '0';
+}
+
+function bumpDataVersion_() {
+  const props = PropertiesService.getScriptProperties();
+  const n = Number(getDataVersion_()) + 1;
+  props.setProperty(CONFIG.DATA_VERSION_KEY, String(Math.trunc(n)));
+}
+
 function setPersistedCache_(key, value) {
   const props = PropertiesService.getScriptProperties();
   try {
@@ -1023,11 +1159,37 @@ function appendMovementBackupCsv_(rowData) {
   file.setContent(current + line);
 }
 
+function rebuildMovementBackupCsvFromSheet_() {
+  const ws = getSheet_(SHEETS.MOVEMENTS.name, SHEETS.MOVEMENTS.headers);
+  const lastRow = ws.getLastRow();
+  const file = ensureBackupCsvFile_();
+  const header = SHEETS.MOVEMENTS.headers.join(',') + '\n';
+  if (lastRow < 2) {
+    file.setContent(header);
+    return;
+  }
+  const rows = ws.getRange(2, 1, lastRow - 1, SHEETS.MOVEMENTS.headers.length).getValues();
+  const body = rows.map((row) => row.map((v) => escapeCsvCell_(v)).join(',')).join('\n');
+  file.setContent(header + body + '\n');
+}
+
 function escapeCsvCell_(value) {
   const raw = String(value == null ? '' : value);
   const escaped = raw.replace(/"/g, '""');
   if (/[",\n\r]/.test(escaped)) return '"' + escaped + '"';
   return escaped;
+}
+
+function diffMovementForAudit_(oldObj, newObj) {
+  const keys = ['movement_date', 'item_code', 'service_name', 'move_type', 'quantity', 'ticket_no', 'notes'];
+  const out = [];
+  for (let i = 0; i < keys.length; i++) {
+    const k = keys[i];
+    const a = String(oldObj[k] == null ? '' : oldObj[k]);
+    const b = String(newObj[k] == null ? '' : newObj[k]);
+    if (a !== b) out.push(k + ':[' + a + ']=>[' + b + ']');
+  }
+  return out.length ? out.join(' | ') : 'sin cambios';
 }
 
 function ensureDefaultProviders_() {
