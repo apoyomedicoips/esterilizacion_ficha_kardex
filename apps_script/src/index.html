@@ -801,7 +801,13 @@ function runServer(fn, payload){
 
 async function safeServer(fn, payload){
   setLoading(true);
-  try { return await runServer(fn, payload); }
+  try {
+    const out = await Promise.race([
+      runServer(fn, payload),
+      new Promise((_, reject) => setTimeout(() => reject('Tiempo de espera agotado en servidor. Intente nuevamente.'), 45000))
+    ]);
+    return out;
+  }
   finally { setLoading(false); }
 }
 
@@ -3885,7 +3891,8 @@ function readFileAsEvidence(file){
 })();
 
 (async function init(){
-  if(!state.token){ renderLogin(); return; }
+  renderLogin();
+  if(!state.token){ return; }
   try{
     await Promise.race([
       loadBootstrap(),
@@ -3901,6 +3908,7 @@ function readFileAsEvidence(file){
     state.user=null;
     state.bootstrap=null;
     renderLogin();
+    showMsg('Sesion anterior no valida o expirada. Ingrese nuevamente.');
   }
 })();
 </script>
