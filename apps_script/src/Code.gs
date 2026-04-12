@@ -11,6 +11,9 @@ const CONFIG = {
   DATA_VERSION_KEY: 'KARDEX_DATA_VERSION',
   BACKUP_CSV_PROP_KEY: 'KARDEX_MOVEMENTS_BACKUP_CSV_ID',
   BACKUP_CSV_NAME: 'kardex_movements_backup.csv',
+  EVIDENCE_FOLDER_PROP_KEY: 'KARDEX_EVIDENCE_FOLDER_ID',
+  EVIDENCE_FOLDER_NAME: 'kardex_evidencias',
+  MAX_EVIDENCE_BYTES: 8 * 1024 * 1024,
   DEFAULT_PROVIDER: 'CONSORCIO CDB',
   WARMUP_TRIGGER_FN: 'warmupDashboardCachesJob',
   WARMUP_TRIGGER_HOUR: 4
@@ -40,6 +43,9 @@ const SHEETS = {
       'quantity',
       'ticket_no',
       'notes',
+      'evidence_name',
+      'evidence_url',
+      'evidence_file_id',
       'username',
       'created_at'
     ]
@@ -385,6 +391,7 @@ function createMovement(payload) {
   const quantity = Number((payload && payload.quantity) || 0);
   const ticketNo = String((payload && payload.ticket_no) || '').trim().slice(0, 80);
   const notes = String((payload && payload.notes) || '').trim().slice(0, 1000);
+  const evidence = payload && payload.evidence ? payload.evidence : null;
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(movementDate)) throw new Error('Fecha invalida');
   if (!itemCode) throw new Error('Item requerido');
@@ -407,6 +414,16 @@ function createMovement(payload) {
     }
   }
 
+  let evidenceName = '';
+  let evidenceUrl = '';
+  let evidenceFileId = '';
+  if (evidence && evidence.data_base64) {
+    const out = createEvidenceFile_(evidence, session.username);
+    evidenceName = out.name;
+    evidenceUrl = out.url;
+    evidenceFileId = out.fileId;
+  }
+
   const ws = getSheet_(SHEETS.MOVEMENTS.name, SHEETS.MOVEMENTS.headers);
   const rowData = [
     Utilities.getUuid(),
@@ -417,6 +434,9 @@ function createMovement(payload) {
     Math.trunc(quantity),
     ticketNo,
     notes,
+    evidenceName,
+    evidenceUrl,
+    evidenceFileId,
     session.username,
     new Date().toISOString()
   ];
@@ -439,7 +459,13 @@ function createMovement(payload) {
   }
   bumpDataVersion_();
 
-  audit_('CREATE', 'Movement', itemCode, `${moveType} qty=${quantity} provider_or_area=${serviceName}`, session.username);
+  audit_(
+    'CREATE',
+    'Movement',
+    itemCode,
+    `${moveType} qty=${quantity} provider_or_area=${serviceName}; evidence=${evidenceFileId ? 'SI' : 'NO'}`,
+    session.username
+  );
   return { ok: true };
 }
 
@@ -790,6 +816,20 @@ function getSheet_(name, headers) {
   if (isEmptyHeader) {
     ws.getRange(1, 1, 1, headers.length).setValues([headers]);
     ws.setFrozenRows(1);
+  } else {
+    const nextHeaders = currentHeaders.slice();
+    let changed = false;
+    for (let i = 0; i < headers.length; i++) {
+      const expected = String(headers[i] || '').trim();
+      const current = String(nextHeaders[i] || '').trim();
+      if (!current) {
+        nextHeaders[i] = expected;
+        changed = true;
+      }
+    }
+    if (changed) {
+      ws.getRange(1, 1, 1, headers.length).setValues([nextHeaders]);
+    }
   }
 
   return ws;
@@ -850,6 +890,9 @@ function listMovements_() {
     quantity: Number(r.quantity || 0),
     ticket_no: String(r.ticket_no || ''),
     notes: String(r.notes || ''),
+    evidence_name: String(r.evidence_name || ''),
+    evidence_url: String(r.evidence_url || ''),
+    evidence_file_id: String(r.evidence_file_id || ''),
     username: String(r.username || ''),
     created_at: String(r.created_at || '')
   })).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
@@ -938,7 +981,7 @@ function getMovementsFingerprint_() {
   const lastRow = ws.getLastRow();
   if (lastRow < 2) return '0';
   const row = ws.getRange(lastRow, 1, 1, SHEETS.MOVEMENTS.headers.length).getValues()[0];
-  return String(lastRow) + '|' + String(row[0] || '') + '|' + String(row[1] || '') + '|' + String(row[9] || '');
+  return String(lastRow) + '|' + String(row[0] || '') + '|' + String(row[1] || '') + '|' + String(row[12] || '');
 }
 
 function getItemsFingerprint_() {
@@ -1129,6 +1172,9 @@ function ensureBackupCsvFile_() {
     'quantity',
     'ticket_no',
     'notes',
+    'evidence_name',
+    'evidence_url',
+    'evidence_file_id',
     'username',
     'created_at'
   ].join(',') + '\n';
@@ -1157,6 +1203,64 @@ function appendMovementBackupCsv_(rowData) {
   const line = rowData.map((v) => escapeCsvCell_(v)).join(',') + '\n';
   const current = file.getBlob().getDataAsString('UTF-8');
   file.setContent(current + line);
+}
+
+function ensureEvidenceFolder_() {
+  const props = PropertiesService.getScriptProperties();
+  const key = CONFIG.EVIDENCE_FOLDER_PROP_KEY;
+  const knownId = String(props.getProperty(key) || '').trim();
+  if (knownId) {
+    try {
+      return DriveApp.getFolderById(knownId);
+    } catch (_e) {
+      // Continue and recreate.
+    }
+  }
+
+  const ssFile = DriveApp.getFileById(CONFIG.SPREADSHEET_ID);
+  const parents = ssFile.getParents();
+  let folder = null;
+  if (parents.hasNext()) {
+    const root = parents.next();
+    const found = root.getFoldersByName(CONFIG.EVIDENCE_FOLDER_NAME);
+    folder = found.hasNext() ? found.next() : root.createFolder(CONFIG.EVIDENCE_FOLDER_NAME);
+  } else {
+    const found = DriveApp.getFoldersByName(CONFIG.EVIDENCE_FOLDER_NAME);
+    folder = found.hasNext() ? found.next() : DriveApp.createFolder(CONFIG.EVIDENCE_FOLDER_NAME);
+  }
+  props.setProperty(key, folder.getId());
+  return folder;
+}
+
+function createEvidenceFile_(evidence, username) {
+  const nameRaw = String((evidence && evidence.filename) || 'evidencia').trim();
+  const mimeType = String((evidence && evidence.mime_type) || 'application/octet-stream').trim();
+  const b64 = String((evidence && evidence.data_base64) || '').trim();
+  if (!b64) throw new Error('Archivo de evidencia invalido');
+  const bytes = Utilities.base64Decode(b64);
+  if (!bytes || !bytes.length) throw new Error('Archivo de evidencia vacio');
+  if (bytes.length > Number(CONFIG.MAX_EVIDENCE_BYTES || 0)) {
+    throw new Error('El archivo de evidencia supera el limite de 8 MB');
+  }
+  const safeName = sanitizeFileName_(nameRaw);
+  const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmmss');
+  const fullName = `${stamp}_${String(username || 'user')}_${safeName}`;
+  const folder = ensureEvidenceFolder_();
+  const blob = Utilities.newBlob(bytes, mimeType, fullName);
+  const file = folder.createFile(blob);
+  return {
+    fileId: file.getId(),
+    url: file.getUrl(),
+    name: fullName
+  };
+}
+
+function sanitizeFileName_(name) {
+  const s = String(name || 'evidencia').trim() || 'evidencia';
+  return s
+    .replace(/[\\/:*?"<>|]+/g, '_')
+    .replace(/\\s+/g, '_')
+    .slice(0, 120);
 }
 
 function rebuildMovementBackupCsvFromSheet_() {
@@ -1382,6 +1486,9 @@ function importHistoricoMarzo2026_(sourceSpreadsheetId) {
         qty,
         '',
         note,
+        '',
+        '',
+        '',
         'system_import',
         nowIso
       ]);
@@ -1476,6 +1583,9 @@ function importHistoricoDetalladoMarzo2026_(sourceSpreadsheetId) {
               q,
               ticket,
               `Detalle servicio desde ${sheetName}`,
+              '',
+              '',
+              '',
               'system_import',
               new Date().toISOString()
             ]);
@@ -1509,6 +1619,9 @@ function importHistoricoDetalladoMarzo2026_(sourceSpreadsheetId) {
             q,
             '',
             'Ajuste para cuadrar saldo diario',
+            '',
+            '',
+            '',
             'system_import',
             new Date().toISOString()
           ]);
@@ -1528,6 +1641,9 @@ function importHistoricoDetalladoMarzo2026_(sourceSpreadsheetId) {
             q,
             '',
             'Ajuste negativo para cuadrar saldo diario',
+            '',
+            '',
+            '',
             'system_import',
             new Date().toISOString()
           ]);
@@ -1607,8 +1723,18 @@ function replaceDataForImport_(payload) {
 
   if (items.length) itemsWs.getRange(2, 1, items.length, SHEETS.ITEMS.headers.length).setValues(items);
   if (services.length) servicesWs.getRange(2, 1, services.length, SHEETS.SERVICES.headers.length).setValues(services);
-  if (movements.length) movementsWs.getRange(2, 1, movements.length, SHEETS.MOVEMENTS.headers.length).setValues(movements);
+  if (movements.length) {
+    const normalized = movements.map((r) => normalizeImportedMovementRow_(r));
+    movementsWs.getRange(2, 1, normalized.length, SHEETS.MOVEMENTS.headers.length).setValues(normalized);
+  }
 
   audit_('IMPORT', 'HistoricalDetailed', '2026-03', `replace_data items=${items.length}, services=${services.length}, movements=${movements.length}`, 'system_import');
   return { items: items.length, services: services.length, movements: movements.length };
+}
+
+function normalizeImportedMovementRow_(row) {
+  const inRow = Array.isArray(row) ? row : [];
+  const out = inRow.slice(0, SHEETS.MOVEMENTS.headers.length);
+  while (out.length < SHEETS.MOVEMENTS.headers.length) out.push('');
+  return out;
 }

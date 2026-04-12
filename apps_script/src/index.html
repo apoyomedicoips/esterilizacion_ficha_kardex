@@ -2815,6 +2815,11 @@ function renderMovements(){
             <label>Nota (opcional)</label>
             <textarea id="m_notes" placeholder="Observaciones"></textarea>
           </div>
+          <div>
+            <label>Evidencia (foto o archivo, opcional)</label>
+            <input id="m_evidence" type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"/>
+            <p class="small">Maximo sugerido: 8 MB. Se guarda en carpeta segura de Drive y se enlaza al registro.</p>
+          </div>
           <button id="saveMove" class="save">Guardar movimiento</button>
         </div>
       </div>
@@ -3003,6 +3008,15 @@ function renderMovements(){
 
   document.getElementById('saveMove').onclick=async()=>{
     try{
+      const evidenceFile=(document.getElementById('m_evidence').files||[])[0]||null;
+      let evidencePayload=null;
+      if(evidenceFile){
+        if(Number(evidenceFile.size||0) > 8*1024*1024){
+          showMsg('La evidencia supera 8 MB. Reduzca el tamano del archivo.');
+          return;
+        }
+        evidencePayload=await readFileAsEvidence(evidenceFile);
+      }
       const payload={
         token:state.token,
         movement_date:document.getElementById('m_date').value,
@@ -3011,7 +3025,8 @@ function renderMovements(){
         move_type:state.movementType,
         quantity:Number(document.getElementById('m_qty').value||0),
         ticket_no:document.getElementById('m_ticket').value,
-        notes:document.getElementById('m_notes').value
+        notes:document.getElementById('m_notes').value,
+        evidence:evidencePayload
       };
 
       if(!payload.movement_date){ showMsg('Seleccione la fecha.'); return; }
@@ -3027,6 +3042,7 @@ function renderMovements(){
       document.getElementById('m_qty').value='';
       document.getElementById('m_ticket').value='';
       document.getElementById('m_notes').value='';
+      document.getElementById('m_evidence').value='';
       document.getElementById('m_qty').focus();
     }catch(e){ showMsg(e); }
   };
@@ -3140,7 +3156,7 @@ async function renderEditMovements(){
       return;
     }
     tbl.innerHTML=`<table>
-      <thead><tr><th>Accion</th><th>Fecha</th><th>Item</th><th>Tipo</th><th>Proveedor/Dependencia</th><th>Cantidad</th><th>Ticket</th><th>Usuario</th><th>Creado</th></tr></thead>
+      <thead><tr><th>Accion</th><th>Fecha</th><th>Item</th><th>Tipo</th><th>Proveedor/Dependencia</th><th>Cantidad</th><th>Ticket</th><th>Evidencia</th><th>Usuario</th><th>Creado</th></tr></thead>
       <tbody>${recent.map(r=>{
         const active=String(r.movement_id||'')===String(state.editSelectedId||'');
         const t=String(r.move_type||'').toUpperCase();
@@ -3155,6 +3171,7 @@ async function renderEditMovements(){
           <td>${esc(r.service_name)}</td>
           <td style="text-align:right">${fmt(r.quantity)}</td>
           <td>${esc(r.ticket_no||'')}</td>
+          <td>${r.evidence_url ? `<a href="${escAttr(r.evidence_url)}" target="_blank" rel="noopener">Ver archivo</a>` : '<span style="opacity:.55">-</span>'}</td>
           <td>${esc(r.username||'')}</td>
           <td>${esc(r.created_at||'')}</td>
         </tr>`;
@@ -3579,6 +3596,29 @@ function esc(v){
   return String(v==null?'':v).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
 }
 function escAttr(v){ return esc(v); }
+
+function readFileAsEvidence(file){
+  return new Promise((resolve,reject)=>{
+    try{
+      const reader=new FileReader();
+      reader.onload=()=>{
+        try{
+          const out=String(reader.result||'');
+          const comma=out.indexOf(',');
+          if(comma<0){ reject('No se pudo leer el archivo de evidencia.'); return; }
+          const b64=out.slice(comma+1);
+          resolve({
+            filename:String(file.name||'evidencia'),
+            mime_type:String(file.type||'application/octet-stream'),
+            data_base64:b64
+          });
+        }catch(e){ reject(String(e&&e.message?e.message:e)); }
+      };
+      reader.onerror=()=>reject('Error al leer el archivo seleccionado.');
+      reader.readAsDataURL(file);
+    }catch(e){ reject(String(e&&e.message?e.message:e)); }
+  });
+}
 
 // Global tooltip for item panel (works inside overflow containers)
 (function setupGlobalTooltip(){
