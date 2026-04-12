@@ -641,6 +641,7 @@
       align-items: center;
       gap: 6px;
     }
+    .header-month-badge.hidden { display: none !important; }
     .header-month-badge span { opacity: 0.75; font-size: 0.78rem; font-weight: 400; }
     .header-month-input {
       background: transparent;
@@ -756,7 +757,7 @@ const _ls = (() => {
 })();
 
 const state = {
-  token: _ls.getItem('kardex_token') || '',
+  token: '',
   user: null,
   bootstrap: null,
   dashboard: null,
@@ -3930,24 +3931,7 @@ function readFileAsEvidence(file){
 
 (async function init(){
   renderLogin();
-  if(!state.token){ return; }
-  try{
-    await Promise.race([
-      loadBootstrap(),
-      new Promise((_,rej)=>setTimeout(()=>rej(new Error('Bootstrap timeout')), 9000))
-    ]);
-    if(!state.user || !state.user.username){
-      throw new Error('Sesion invalida');
-    }
-    render();
-  }catch(_e){
-    _ls.removeItem('kardex_token');
-    state.token='';
-    state.user=null;
-    state.bootstrap=null;
-    renderLogin();
-    showMsg('Sesion anterior no valida o expirada. Ingrese nuevamente.');
-  }
+  _ls.removeItem('kardex_token');
 })();
 </script>
 </body>
