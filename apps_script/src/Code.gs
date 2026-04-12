@@ -34,6 +34,14 @@ const SHEETS = {
     name: 'CONSUMERS',
     headers: ['consumer_name', 'active', 'created_at']
   },
+  LAUNDRY_PROVIDERS: {
+    name: 'LAUNDRY_PROVIDERS',
+    headers: ['provider_name', 'active', 'created_at']
+  },
+  LAUNDRY_GARMENTS: {
+    name: 'LAUNDRY_GARMENTS',
+    headers: ['garment_name', 'active', 'created_at']
+  },
   MOVEMENTS: {
     name: 'MOVEMENTS',
     headers: [
@@ -103,7 +111,8 @@ function getBootstrap(token) {
     services: listProviders_().filter((s) => s.active), // backward compatibility
     providers: listProviders_().filter((s) => s.active),
     consumers: listConsumers_().filter((s) => s.active),
-    laundry_recent: listLaundryRecordsInternal_(Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM'), 20),
+    laundry_providers: listLaundryProviders_().filter((s) => s.active),
+    laundry_garments: listLaundryGarments_().filter((s) => s.active),
     items: listItems_().filter((i) => i.active),
     now: new Date().toISOString()
   };
@@ -512,6 +521,10 @@ function createLaundryRecord(payload) {
   if (!garmentType) throw new Error('Tipo de prenda requerido');
   if (!Number.isFinite(qtySent) || qtySent <= 0) throw new Error('Cantidad enviada invalida');
   if (!Number.isFinite(qtyReceived) || qtyReceived < 0) throw new Error('Cantidad recibida invalida');
+  const providerOk = listLaundryProviders_().some((p) => p.active && String(p.provider_name || '').toUpperCase() === providerName);
+  if (!providerOk) throw new Error('Proveedor de lavanderia no registrado. Agreguelo en Catalogos de lavanderia.');
+  const garmentOk = listLaundryGarments_().some((g) => g.active && String(g.garment_name || '').toUpperCase() === garmentType);
+  if (!garmentOk) throw new Error('Tipo de prenda no registrado. Agreguelo en Catalogos de lavanderia.');
 
   let evidenceName = '';
   let evidenceUrl = '';
@@ -574,6 +587,30 @@ function listLaundryRecords(payload) {
   const month = String((payload && payload.month) || '').trim();
   const limit = Number((payload && payload.limit) || 500);
   return listLaundryRecordsInternal_(month, limit);
+}
+
+function createLaundryProvider(payload) {
+  const session = requireSession_(payload && payload.token, ['admin']);
+  const name = String((payload && payload.provider_name) || '').trim().toUpperCase().slice(0, 120);
+  if (!name) throw new Error('Proveedor requerido');
+  const exists = listLaundryProviders_().some((p) => String(p.provider_name || '').toUpperCase() === name);
+  if (exists) throw new Error('Proveedor de lavanderia ya existe');
+  const ws = getSheet_(SHEETS.LAUNDRY_PROVIDERS.name, SHEETS.LAUNDRY_PROVIDERS.headers);
+  ws.appendRow([name, true, new Date().toISOString()]);
+  audit_('CREATE', 'LaundryProvider', name, '', session.username);
+  return { ok: true };
+}
+
+function createLaundryGarment(payload) {
+  const session = requireSession_(payload && payload.token, ['admin']);
+  const name = String((payload && payload.garment_name) || '').trim().toUpperCase().slice(0, 120);
+  if (!name) throw new Error('Tipo de prenda requerido');
+  const exists = listLaundryGarments_().some((g) => String(g.garment_name || '').toUpperCase() === name);
+  if (exists) throw new Error('Tipo de prenda ya existe');
+  const ws = getSheet_(SHEETS.LAUNDRY_GARMENTS.name, SHEETS.LAUNDRY_GARMENTS.headers);
+  ws.appendRow([name, true, new Date().toISOString()]);
+  audit_('CREATE', 'LaundryGarment', name, '', session.username);
+  return { ok: true };
 }
 
 function listLaundryRecordsInternal_(month, limit) {
@@ -934,10 +971,13 @@ function ensureSchema_() {
   getSheet_(SHEETS.ITEMS.name, SHEETS.ITEMS.headers);
   getSheet_(SHEETS.SERVICES.name, SHEETS.SERVICES.headers);
   getSheet_(SHEETS.CONSUMERS.name, SHEETS.CONSUMERS.headers);
+  getSheet_(SHEETS.LAUNDRY_PROVIDERS.name, SHEETS.LAUNDRY_PROVIDERS.headers);
+  getSheet_(SHEETS.LAUNDRY_GARMENTS.name, SHEETS.LAUNDRY_GARMENTS.headers);
   getSheet_(SHEETS.MOVEMENTS.name, SHEETS.MOVEMENTS.headers);
   getSheet_(SHEETS.LAUNDRY.name, SHEETS.LAUNDRY.headers);
   getSheet_(SHEETS.AUDIT.name, SHEETS.AUDIT.headers);
   ensureDefaultItems_();
+  ensureDefaultLaundryCatalogs_();
   ensureDefaultProviders_();
   ensureDefaultConsumers_();
   ensureDefaultUsers_();
@@ -1017,6 +1057,22 @@ function listConsumers_() {
     active: toBool_(r.active),
     created_at: String(r.created_at || '').trim()
   })).sort((a, b) => a.consumer_name.localeCompare(b.consumer_name));
+}
+
+function listLaundryProviders_() {
+  return getRowsAsObjects_(SHEETS.LAUNDRY_PROVIDERS).map((r) => ({
+    provider_name: String(r.provider_name || '').trim(),
+    active: toBool_(r.active),
+    created_at: String(r.created_at || '').trim()
+  })).sort((a, b) => a.provider_name.localeCompare(b.provider_name));
+}
+
+function listLaundryGarments_() {
+  return getRowsAsObjects_(SHEETS.LAUNDRY_GARMENTS).map((r) => ({
+    garment_name: String(r.garment_name || '').trim(),
+    active: toBool_(r.active),
+    created_at: String(r.created_at || '').trim()
+  })).sort((a, b) => a.garment_name.localeCompare(b.garment_name));
 }
 
 function listServices_() {
@@ -1505,6 +1561,21 @@ function ensureDefaultItems_() {
   if (hasGuantes) return;
   const ws = getSheet_(SHEETS.ITEMS.name, SHEETS.ITEMS.headers);
   ws.appendRow(['GUANTES', 'GUANTES', 0, true, new Date().toISOString()]);
+}
+
+function ensureDefaultLaundryCatalogs_() {
+  const nowIso = new Date().toISOString();
+  const prov = listLaundryProviders_();
+  if (!prov.some((p) => String(p.provider_name || '').toUpperCase() === 'LAVANDERIA EXTERNA')) {
+    getSheet_(SHEETS.LAUNDRY_PROVIDERS.name, SHEETS.LAUNDRY_PROVIDERS.headers).appendRow(['LAVANDERIA EXTERNA', true, nowIso]);
+  }
+  const garments = listLaundryGarments_();
+  const defaults = ['SABANA', 'CAMPO', 'TOALLA', 'UNIFORME', 'FUNDA'];
+  const ws = getSheet_(SHEETS.LAUNDRY_GARMENTS.name, SHEETS.LAUNDRY_GARMENTS.headers);
+  defaults.forEach((g) => {
+    const exists = garments.some((x) => String(x.garment_name || '').toUpperCase() === g);
+    if (!exists) ws.appendRow([g, true, nowIso]);
+  });
 }
 
 function requireMasterAdmin_(session) {

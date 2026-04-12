@@ -762,6 +762,7 @@ const VIEW_LABELS = {
   tracking: 'Seguimiento de carga',
   estimation: 'Estimacion 10 dias',
   laundry: 'Lavanderia',
+  laundryCatalogs: 'Cat. lavanderia',
   items: 'Catalogo de items',
   services: 'Catalogo de proveedores',
   consumers: 'Catalogo de dependencias',
@@ -819,6 +820,7 @@ function render(){
   if(state.currentView==='tracking') renderTracking();
   if(state.currentView==='estimation') renderEstimation();
   if(state.currentView==='laundry') renderLaundry();
+  if(state.currentView==='laundryCatalogs') renderLaundryCatalogs();
   if(state.currentView==='edit') renderEditMovements();
   if(state.currentView==='items') renderItems();
   if(state.currentView==='services') renderServices();
@@ -895,6 +897,7 @@ function renderShell(){
   addMenuBtn(menu,'Seguimiento','tracking',()=>{state.currentView='tracking';render();});
   addMenuBtn(menu,'Estimacion','estimation',()=>{state.currentView='estimation';render();});
   addMenuBtn(menu,'Lavanderia','laundry',()=>{state.currentView='laundry';render();});
+  if(isAdmin) addMenuBtn(menu,'Cat. Lavanderia','laundryCatalogs',()=>{state.currentView='laundryCatalogs';render();});
   if(canWrite) addMenuBtn(menu,'Registrar','movements',()=>{state.currentView='movements';render();});
   if(canWrite) addMenuBtn(menu,'Editar','edit',()=>{state.currentView='edit';render();});
   addMenuBtn(menu,'Mi cuenta','profile',()=>{state.currentView='profile';render();});
@@ -3284,7 +3287,8 @@ async function renderLaundry(){
   state.laundryMonth=monthDefault;
   const canWrite=state.user && (state.user.role==='admin' || state.user.role==='operator');
   const consumers=(state.bootstrap && state.bootstrap.consumers)||[];
-  const providers=(state.bootstrap && (state.bootstrap.providers||state.bootstrap.services))||[];
+  const laundryProviders=(state.bootstrap && state.bootstrap.laundry_providers)||[];
+  const laundryGarments=(state.bootstrap && state.bootstrap.laundry_garments)||[];
 
   app.innerHTML=`
   <section class="card">
@@ -3304,11 +3308,12 @@ async function renderLaundry(){
       <div>
         <label>Proveedor lavanderia</label>
         <input id="l_provider" type="text" list="l_provider_list" value="LAVANDERIA EXTERNA"/>
-        <datalist id="l_provider_list">${providers.map(p=>`<option value="${escAttr(p.service_name)}"></option>`).join('')}<option value="LAVANDERIA EXTERNA"></option></datalist>
+        <datalist id="l_provider_list">${laundryProviders.map(p=>`<option value="${escAttr(p.provider_name)}"></option>`).join('')}<option value="LAVANDERIA EXTERNA"></option></datalist>
       </div>
       <div>
         <label>Tipo de prenda</label>
-        <input id="l_garment" type="text" placeholder="Ej.: SABANA, CAMPO, TOALLA"/>
+        <input id="l_garment" type="text" list="l_garment_list" placeholder="Ej.: SABANA, CAMPO, TOALLA"/>
+        <datalist id="l_garment_list">${laundryGarments.map(g=>`<option value="${escAttr(g.garment_name)}"></option>`).join('')}</datalist>
       </div>
       <div>
         <label>Cantidad enviada</label>
@@ -3437,6 +3442,65 @@ async function renderLaundry(){
   try{
     await loadLaundry(false);
   }catch(e){ showMsg(e); }
+}
+
+async function renderLaundryCatalogs(){
+  const app=document.getElementById('app');
+  const isAdmin=state.user && state.user.role==='admin';
+  if(!isAdmin){
+    app.innerHTML=`<section class="card"><h2>${VIEW_LABELS.laundryCatalogs}</h2><p class="help">Solo administracion puede modificar estos catalogos.</p></section>`;
+    return;
+  }
+  const prov=(state.bootstrap && state.bootstrap.laundry_providers)||[];
+  const garments=(state.bootstrap && state.bootstrap.laundry_garments)||[];
+  app.innerHTML=`
+  <section class="card">
+    <h2>${VIEW_LABELS.laundryCatalogs}</h2>
+    <p class="help">Configure las listas oficiales para registros de lavanderia.</p>
+    <div class="grid">
+      <div>
+        <label>Nuevo proveedor lavanderia</label>
+        <input id="lc_provider" type="text" placeholder="Ej.: LAVANDERIA CENTRAL"/>
+      </div>
+      <button id="lc_add_provider">Agregar proveedor</button>
+      <div>
+        <label>Nueva prenda</label>
+        <input id="lc_garment" type="text" placeholder="Ej.: CUBRE CAMILLA"/>
+      </div>
+      <button id="lc_add_garment">Agregar prenda</button>
+    </div>
+    <div class="analytics-grid" style="margin-top:12px">
+      <div class="table">
+        <table>
+          <thead><tr><th>Proveedor lavanderia</th><th>Activo</th></tr></thead>
+          <tbody>${prov.map(p=>`<tr><td>${esc(p.provider_name)}</td><td>${p.active?'Si':'No'}</td></tr>`).join('')}</tbody>
+        </table>
+      </div>
+      <div class="table">
+        <table>
+          <thead><tr><th>Tipo de prenda</th><th>Activo</th></tr></thead>
+          <tbody>${garments.map(g=>`<tr><td>${esc(g.garment_name)}</td><td>${g.active?'Si':'No'}</td></tr>`).join('')}</tbody>
+        </table>
+      </div>
+    </div>
+  </section>`;
+
+  document.getElementById('lc_add_provider').onclick=async()=>{
+    try{
+      await safeServer('createLaundryProvider',{token:state.token,provider_name:document.getElementById('lc_provider').value});
+      showMsg('Proveedor de lavanderia agregado.',true);
+      await loadBootstrap();
+      renderLaundryCatalogs();
+    }catch(e){ showMsg(e); }
+  };
+  document.getElementById('lc_add_garment').onclick=async()=>{
+    try{
+      await safeServer('createLaundryGarment',{token:state.token,garment_name:document.getElementById('lc_garment').value});
+      showMsg('Tipo de prenda agregado.',true);
+      await loadBootstrap();
+      renderLaundryCatalogs();
+    }catch(e){ showMsg(e); }
+  };
 }
 
 function renderItems(){
