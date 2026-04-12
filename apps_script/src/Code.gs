@@ -11,6 +11,8 @@ const CONFIG = {
   DATA_VERSION_KEY: 'KARDEX_DATA_VERSION',
   BACKUP_CSV_PROP_KEY: 'KARDEX_MOVEMENTS_BACKUP_CSV_ID',
   BACKUP_CSV_NAME: 'kardex_movements_backup.csv',
+  LAUNDRY_BACKUP_CSV_PROP_KEY: 'KARDEX_LAUNDRY_BACKUP_CSV_ID',
+  LAUNDRY_BACKUP_CSV_NAME: 'kardex_lavanderia_backup.csv',
   EVIDENCE_FOLDER_PROP_KEY: 'KARDEX_EVIDENCE_FOLDER_ID',
   EVIDENCE_FOLDER_NAME: 'kardex_evidencias',
   MAX_EVIDENCE_BYTES: 8 * 1024 * 1024,
@@ -41,6 +43,26 @@ const SHEETS = {
       'service_name',
       'move_type',
       'quantity',
+      'ticket_no',
+      'notes',
+      'evidence_name',
+      'evidence_url',
+      'evidence_file_id',
+      'username',
+      'created_at'
+    ]
+  },
+  LAUNDRY: {
+    name: 'LAVANDERIA_LOG',
+    headers: [
+      'record_id',
+      'record_date',
+      'area_name',
+      'provider_name',
+      'garment_type',
+      'qty_sent',
+      'qty_received',
+      'qty_pending',
       'ticket_no',
       'notes',
       'evidence_name',
@@ -81,6 +103,7 @@ function getBootstrap(token) {
     services: listProviders_().filter((s) => s.active), // backward compatibility
     providers: listProviders_().filter((s) => s.active),
     consumers: listConsumers_().filter((s) => s.active),
+    laundry_recent: listLaundryRecordsInternal_(Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM'), 20),
     items: listItems_().filter((i) => i.active),
     now: new Date().toISOString()
   };
@@ -469,6 +492,120 @@ function createMovement(payload) {
   return { ok: true };
 }
 
+function createLaundryRecord(payload) {
+  const session = requireSession_(payload && payload.token, ['admin', 'operator']);
+  const recordDate = String((payload && payload.record_date) || '').trim();
+  const areaName = String((payload && payload.area_name) || '').trim().toUpperCase().slice(0, 120);
+  const providerName = String((payload && payload.provider_name) || '').trim().toUpperCase().slice(0, 120);
+  const garmentType = String((payload && payload.garment_type) || '').trim().toUpperCase().slice(0, 120);
+  const qtySent = Number((payload && payload.qty_sent) || 0);
+  const qtyReceived = Number((payload && payload.qty_received) || 0);
+  const ticketNo = String((payload && payload.ticket_no) || '').trim().slice(0, 80);
+  const notes = String((payload && payload.notes) || '').trim().slice(0, 1000);
+  const evidence = payload && payload.evidence ? payload.evidence : null;
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(recordDate)) throw new Error('Fecha invalida');
+  if (!areaName) throw new Error('Dependencia/area requerida');
+  if (!providerName) throw new Error('Proveedor de lavanderia requerido');
+  if (!garmentType) throw new Error('Tipo de prenda requerido');
+  if (!Number.isFinite(qtySent) || qtySent <= 0) throw new Error('Cantidad enviada invalida');
+  if (!Number.isFinite(qtyReceived) || qtyReceived < 0) throw new Error('Cantidad recibida invalida');
+
+  let evidenceName = '';
+  let evidenceUrl = '';
+  let evidenceFileId = '';
+  if (evidence && evidence.data_base64) {
+    const out = createEvidenceFile_(evidence, session.username);
+    evidenceName = out.name;
+    evidenceUrl = out.url;
+    evidenceFileId = out.fileId;
+  }
+
+  const qtyPending = Math.max(0, Math.trunc(qtySent) - Math.trunc(qtyReceived));
+  const rowData = [
+    Utilities.getUuid(),
+    recordDate,
+    areaName,
+    providerName,
+    garmentType,
+    Math.trunc(qtySent),
+    Math.trunc(qtyReceived),
+    qtyPending,
+    ticketNo,
+    notes,
+    evidenceName,
+    evidenceUrl,
+    evidenceFileId,
+    session.username,
+    new Date().toISOString()
+  ];
+  const ws = getSheet_(SHEETS.LAUNDRY.name, SHEETS.LAUNDRY.headers);
+  ws.appendRow(rowData);
+  try {
+    appendLaundryBackupCsv_(rowData);
+  } catch (e) {
+    try {
+      const lastRow = ws.getLastRow();
+      const lastId = String(ws.getRange(lastRow, 1, 1, 1).getValue() || '');
+      if (lastId === String(rowData[0])) ws.deleteRow(lastRow);
+    } catch (_revertErr) {
+      // ignore rollback failure
+    }
+    audit_('ERROR', 'LaundryBackupCSV', rowData[0], String(e && e.message ? e.message : e), session.username);
+    throw new Error('No se pudo guardar la copia CSV de lavanderia. El registro fue revertido.');
+  }
+
+  bumpDataVersion_();
+  audit_(
+    'CREATE',
+    'LaundryRecord',
+    rowData[0],
+    `area=${areaName}; garment=${garmentType}; sent=${Math.trunc(qtySent)}; recv=${Math.trunc(qtyReceived)}; evidence=${evidenceFileId ? 'SI' : 'NO'}`,
+    session.username
+  );
+  return { ok: true, record_id: rowData[0], qty_pending: qtyPending };
+}
+
+function listLaundryRecords(payload) {
+  const token = payload && payload.token;
+  requireSession_(token, ['admin', 'operator', 'viewer']);
+  const month = String((payload && payload.month) || '').trim();
+  const limit = Number((payload && payload.limit) || 500);
+  return listLaundryRecordsInternal_(month, limit);
+}
+
+function listLaundryRecordsInternal_(month, limit) {
+  const parsed = parseMonth_(month || Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM'));
+  const first = new Date(parsed.year, parsed.month - 1, 1);
+  const last = new Date(parsed.year, parsed.month, 0);
+  const max = Math.max(1, Math.min(Number(limit || 500), 1000));
+  const rows = getRowsAsObjects_(SHEETS.LAUNDRY).map((r) => ({
+    record_id: String(r.record_id || ''),
+    record_date: normalizeDateValue_(r.record_date),
+    area_name: String(r.area_name || ''),
+    provider_name: String(r.provider_name || ''),
+    garment_type: String(r.garment_type || ''),
+    qty_sent: Number(r.qty_sent || 0),
+    qty_received: Number(r.qty_received || 0),
+    qty_pending: Number(r.qty_pending || 0),
+    ticket_no: String(r.ticket_no || ''),
+    notes: String(r.notes || ''),
+    evidence_name: String(r.evidence_name || ''),
+    evidence_url: String(r.evidence_url || ''),
+    evidence_file_id: String(r.evidence_file_id || ''),
+    username: String(r.username || ''),
+    created_at: String(r.created_at || '')
+  })).filter((r) => {
+    const d = parseDateSafe_(r.record_date);
+    if (!d) return false;
+    return d >= first && d <= last;
+  }).sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  return {
+    month: Utilities.formatDate(first, Session.getScriptTimeZone(), 'yyyy-MM'),
+    rows: rows.slice(0, max)
+  };
+}
+
 function createItem(payload) {
   const session = requireSession_(payload && payload.token, ['admin']);
   const code = String((payload && payload.code) || '').trim().toUpperCase().slice(0, 30);
@@ -794,6 +931,7 @@ function ensureSchema_() {
   getSheet_(SHEETS.SERVICES.name, SHEETS.SERVICES.headers);
   getSheet_(SHEETS.CONSUMERS.name, SHEETS.CONSUMERS.headers);
   getSheet_(SHEETS.MOVEMENTS.name, SHEETS.MOVEMENTS.headers);
+  getSheet_(SHEETS.LAUNDRY.name, SHEETS.LAUNDRY.headers);
   getSheet_(SHEETS.AUDIT.name, SHEETS.AUDIT.headers);
   ensureDefaultProviders_();
   ensureDefaultConsumers_();
@@ -1200,6 +1338,41 @@ function ensureBackupCsvFile_() {
 
 function appendMovementBackupCsv_(rowData) {
   const file = ensureBackupCsvFile_();
+  const line = rowData.map((v) => escapeCsvCell_(v)).join(',') + '\n';
+  const current = file.getBlob().getDataAsString('UTF-8');
+  file.setContent(current + line);
+}
+
+function ensureLaundryBackupCsvFile_() {
+  const props = PropertiesService.getScriptProperties();
+  const key = CONFIG.LAUNDRY_BACKUP_CSV_PROP_KEY;
+  const knownId = String(props.getProperty(key) || '').trim();
+  if (knownId) {
+    try {
+      return DriveApp.getFileById(knownId);
+    } catch (_e) {
+      // continue and recreate
+    }
+  }
+  const header = SHEETS.LAUNDRY.headers.join(',') + '\n';
+  let file = null;
+  const ssFile = DriveApp.getFileById(CONFIG.SPREADSHEET_ID);
+  const parents = ssFile.getParents();
+  if (parents.hasNext()) {
+    const folder = parents.next();
+    const files = folder.getFilesByName(CONFIG.LAUNDRY_BACKUP_CSV_NAME);
+    file = files.hasNext() ? files.next() : folder.createFile(CONFIG.LAUNDRY_BACKUP_CSV_NAME, header, MimeType.CSV);
+  } else {
+    const files = DriveApp.getFilesByName(CONFIG.LAUNDRY_BACKUP_CSV_NAME);
+    file = files.hasNext() ? files.next() : DriveApp.createFile(CONFIG.LAUNDRY_BACKUP_CSV_NAME, header, MimeType.CSV);
+  }
+  props.setProperty(key, file.getId());
+  if (file.getSize() === 0) file.setContent(header);
+  return file;
+}
+
+function appendLaundryBackupCsv_(rowData) {
+  const file = ensureLaundryBackupCsvFile_();
   const line = rowData.map((v) => escapeCsvCell_(v)).join(',') + '\n';
   const current = file.getBlob().getDataAsString('UTF-8');
   file.setContent(current + line);

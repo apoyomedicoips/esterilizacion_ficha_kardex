@@ -739,6 +739,8 @@ const state = {
   trackingRaw: null,
   trackingCache: {},
   trackingPedidoExport: null,
+  laundryMonth: localStorage.getItem('kardex_laundry_month') || '',
+  laundryRaw: null,
   editMonth: localStorage.getItem('kardex_edit_month') || '',
   editRaw: null,
   editSelectedId: '',
@@ -759,6 +761,7 @@ const VIEW_LABELS = {
   movements: 'Registrar movimiento',
   tracking: 'Seguimiento de carga',
   estimation: 'Estimacion 10 dias',
+  laundry: 'Lavanderia',
   items: 'Catalogo de items',
   services: 'Catalogo de proveedores',
   consumers: 'Catalogo de dependencias',
@@ -815,6 +818,7 @@ function render(){
   if(state.currentView==='movements') renderMovements();
   if(state.currentView==='tracking') renderTracking();
   if(state.currentView==='estimation') renderEstimation();
+  if(state.currentView==='laundry') renderLaundry();
   if(state.currentView==='edit') renderEditMovements();
   if(state.currentView==='items') renderItems();
   if(state.currentView==='services') renderServices();
@@ -890,6 +894,7 @@ function renderShell(){
   addMenuBtn(menu,'Cierre mensual','closure',()=>{state.currentView='closure';render();});
   addMenuBtn(menu,'Seguimiento','tracking',()=>{state.currentView='tracking';render();});
   addMenuBtn(menu,'Estimacion','estimation',()=>{state.currentView='estimation';render();});
+  addMenuBtn(menu,'Lavanderia','laundry',()=>{state.currentView='laundry';render();});
   if(canWrite) addMenuBtn(menu,'Registrar','movements',()=>{state.currentView='movements';render();});
   if(canWrite) addMenuBtn(menu,'Editar','edit',()=>{state.currentView='edit';render();});
   addMenuBtn(menu,'Mi cuenta','profile',()=>{state.currentView='profile';render();});
@@ -3271,6 +3276,167 @@ async function renderEditMovements(){
   }catch(e){
     showMsg(e);
   }
+}
+
+async function renderLaundry(){
+  const app=document.getElementById('app');
+  const monthDefault=state.laundryMonth || getCurrentMonth();
+  state.laundryMonth=monthDefault;
+  const canWrite=state.user && (state.user.role==='admin' || state.user.role==='operator');
+  const consumers=(state.bootstrap && state.bootstrap.consumers)||[];
+  const providers=(state.bootstrap && (state.bootstrap.providers||state.bootstrap.services))||[];
+
+  app.innerHTML=`
+  <section class="card">
+    <h2>${VIEW_LABELS.laundry}</h2>
+    <p class="help">Registro de envio/recepcion de prendas de lavanderia. Los datos se guardan en hoja dedicada, auditoria y respaldo CSV.</p>
+    ${canWrite ? `
+    <div class="grid">
+      <div>
+        <label>Fecha</label>
+        <input id="l_date" type="date" value="${new Date().toISOString().slice(0,10)}"/>
+      </div>
+      <div>
+        <label>Dependencia / Area</label>
+        <input id="l_area" type="text" list="l_area_list" placeholder="Ej.: QUIROFANO"/>
+        <datalist id="l_area_list">${consumers.map(c=>`<option value="${escAttr(c.consumer_name)}"></option>`).join('')}</datalist>
+      </div>
+      <div>
+        <label>Proveedor lavanderia</label>
+        <input id="l_provider" type="text" list="l_provider_list" value="LAVANDERIA EXTERNA"/>
+        <datalist id="l_provider_list">${providers.map(p=>`<option value="${escAttr(p.service_name)}"></option>`).join('')}<option value="LAVANDERIA EXTERNA"></option></datalist>
+      </div>
+      <div>
+        <label>Tipo de prenda</label>
+        <input id="l_garment" type="text" placeholder="Ej.: SABANA, CAMPO, TOALLA"/>
+      </div>
+      <div>
+        <label>Cantidad enviada</label>
+        <input id="l_sent" type="number" min="1" placeholder="0"/>
+      </div>
+      <div>
+        <label>Cantidad recibida</label>
+        <input id="l_received" type="number" min="0" value="0"/>
+      </div>
+      <div>
+        <label>Nro. remision / ticket</label>
+        <input id="l_ticket" type="text" placeholder="Opcional"/>
+      </div>
+      <div style="grid-column: span 2;">
+        <label>Notas</label>
+        <textarea id="l_notes" placeholder="Observaciones del envio/recepcion"></textarea>
+      </div>
+      <div>
+        <label>Evidencia (foto o archivo, opcional)</label>
+        <input id="l_evidence" type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"/>
+      </div>
+      <button id="l_save">Guardar registro de lavanderia</button>
+    </div>` : '<div class="note">Usuario en modo consulta: puede visualizar registros, sin crear nuevos.</div>'}
+  </section>
+
+  <section class="card">
+    <div class="inline">
+      <div>
+        <label>Mes</label>
+        <input id="l_month" type="month" value="${monthDefault}"/>
+      </div>
+      <button id="l_load">Actualizar registros</button>
+    </div>
+    <div id="l_header" class="note" style="margin-bottom:8px"></div>
+    <div id="l_table" class="table" style="max-height:60vh;overflow:auto"></div>
+  </section>`;
+
+  async function loadLaundry(force){
+    const month=String(document.getElementById('l_month').value || getCurrentMonth());
+    if(!force && state.laundryRaw && state.laundryRaw.month===month){
+      renderLaundryTable(state.laundryRaw);
+      return;
+    }
+    const out=await safeServer('listLaundryRecords',{token:state.token,month,limit:1000});
+    state.laundryRaw=out;
+    state.laundryMonth=month;
+    localStorage.setItem('kardex_laundry_month', month);
+    renderLaundryTable(out);
+  }
+
+  function renderLaundryTable(out){
+    const header=document.getElementById('l_header');
+    const table=document.getElementById('l_table');
+    const rows=(out&&out.rows)||[];
+    const sent=rows.reduce((s,r)=>s+Number(r.qty_sent||0),0);
+    const recv=rows.reduce((s,r)=>s+Number(r.qty_received||0),0);
+    const pending=rows.reduce((s,r)=>s+Number(r.qty_pending||0),0);
+    header.innerHTML=`<strong>Mes:</strong> ${esc((out&&out.month)||'-')} &nbsp;|&nbsp; <strong>Registros:</strong> ${fmt(rows.length)} &nbsp;|&nbsp; <strong>Enviado:</strong> ${fmt(sent)} &nbsp;|&nbsp; <strong>Recibido:</strong> ${fmt(recv)} &nbsp;|&nbsp; <strong>Pendiente:</strong> ${fmt(pending)}`;
+    if(!rows.length){
+      table.innerHTML='<p class="help">No hay registros de lavanderia en este mes.</p>';
+      return;
+    }
+    table.innerHTML=`<table>
+      <thead><tr><th>Fecha</th><th>Area</th><th>Proveedor</th><th>Prenda</th><th>Enviado</th><th>Recibido</th><th>Pendiente</th><th>Ticket</th><th>Evidencia</th><th>Usuario</th><th>Creado</th></tr></thead>
+      <tbody>${rows.map(r=>`<tr>
+        <td>${esc(r.record_date)}</td>
+        <td>${esc(r.area_name)}</td>
+        <td>${esc(r.provider_name)}</td>
+        <td>${esc(r.garment_type)}</td>
+        <td style="text-align:right">${fmt(r.qty_sent)}</td>
+        <td style="text-align:right">${fmt(r.qty_received)}</td>
+        <td style="text-align:right;font-weight:800;color:${Number(r.qty_pending||0)>0?'#a23a1d':'#0a7a55'}">${fmt(r.qty_pending)}</td>
+        <td>${esc(r.ticket_no||'')}</td>
+        <td>${r.evidence_url ? `<a href="${escAttr(r.evidence_url)}" target="_blank" rel="noopener">Ver</a>` : '<span style="opacity:.55">-</span>'}</td>
+        <td>${esc(r.username||'')}</td>
+        <td>${esc(r.created_at||'')}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  }
+
+  document.getElementById('l_load').onclick=async()=>{ try{ await loadLaundry(true); }catch(e){ showMsg(e); } };
+
+  const saveBtn=document.getElementById('l_save');
+  if(saveBtn){
+    saveBtn.onclick=async()=>{
+      try{
+        const evidenceFile=(document.getElementById('l_evidence').files||[])[0]||null;
+        let evidencePayload=null;
+        if(evidenceFile){
+          if(Number(evidenceFile.size||0) > 8*1024*1024){
+            showMsg('La evidencia supera 8 MB.');
+            return;
+          }
+          evidencePayload=await readFileAsEvidence(evidenceFile);
+        }
+        const payload={
+          token:state.token,
+          record_date:document.getElementById('l_date').value,
+          area_name:document.getElementById('l_area').value,
+          provider_name:document.getElementById('l_provider').value,
+          garment_type:document.getElementById('l_garment').value,
+          qty_sent:Number(document.getElementById('l_sent').value||0),
+          qty_received:Number(document.getElementById('l_received').value||0),
+          ticket_no:document.getElementById('l_ticket').value,
+          notes:document.getElementById('l_notes').value,
+          evidence:evidencePayload
+        };
+        if(!payload.record_date){ showMsg('Seleccione fecha.'); return; }
+        if(!payload.area_name){ showMsg('Complete dependencia/area.'); return; }
+        if(!payload.provider_name){ showMsg('Complete proveedor lavanderia.'); return; }
+        if(!payload.garment_type){ showMsg('Complete tipo de prenda.'); return; }
+        if(!payload.qty_sent || payload.qty_sent<=0){ showMsg('Cantidad enviada invalida.'); return; }
+        if(payload.qty_received<0){ showMsg('Cantidad recibida invalida.'); return; }
+        await safeServer('createLaundryRecord',payload);
+        showMsg('Registro de lavanderia guardado.',true);
+        document.getElementById('l_sent').value='';
+        document.getElementById('l_received').value='0';
+        document.getElementById('l_ticket').value='';
+        document.getElementById('l_notes').value='';
+        document.getElementById('l_evidence').value='';
+        await loadLaundry(true);
+      }catch(e){ showMsg(e); }
+    };
+  }
+
+  try{
+    await loadLaundry(false);
+  }catch(e){ showMsg(e); }
 }
 
 function renderItems(){
