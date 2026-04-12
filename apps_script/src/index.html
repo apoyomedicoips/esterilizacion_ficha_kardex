@@ -3934,6 +3934,74 @@ function readFileAsEvidence(file){
   _ls.removeItem('kardex_token');
 })();
 </script>
+<script>
+(function emergencyBoot(){
+  function esc(v){
+    return String(v==null?'':v).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+  }
+  function server(fn,payload){
+    return new Promise((resolve,reject)=>{
+      try{
+        google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(err=>reject(err && err.message ? err.message : String(err)))
+          [fn](payload);
+      }catch(e){ reject(String(e&&e.message?e.message:e)); }
+    });
+  }
+  function renderEmergency(app){
+    app.innerHTML = `
+      <section class="card narrow">
+        <h2>Modo de emergencia</h2>
+        <p class="help">Se activo una vista segura porque la interfaz principal no cargo correctamente.</p>
+        <label>Usuario</label>
+        <input id="em_u" type="text" placeholder="usuario"/>
+        <label>Contrasena</label>
+        <input id="em_p" type="password" placeholder="contrasena"/>
+        <div class="btn-row" style="margin-top:12px">
+          <button id="em_login">Entrar (modo emergencia)</button>
+        </div>
+        <div id="em_msg" class="small" style="margin-top:8px;color:#4d666e"></div>
+        <div id="em_data" class="table" style="margin-top:10px"></div>
+      </section>`;
+    const msg=document.getElementById('em_msg');
+    const data=document.getElementById('em_data');
+    let token='';
+    document.getElementById('em_login').onclick=async()=>{
+      try{
+        msg.textContent='Autenticando...';
+        const username=String(document.getElementById('em_u').value||'').trim();
+        const password=String(document.getElementById('em_p').value||'');
+        const out=await server('login',{username,password});
+        token=String(out && out.token || '');
+        msg.textContent='Login correcto. Cargando datos del mes...';
+        const month=new Date().toISOString().slice(0,7);
+        const dash=await server('getDashboard',{token,month});
+        const rows=(dash&&dash.rows)||[];
+        data.innerHTML = `
+          <table>
+            <thead><tr><th>Item</th><th>Saldo final</th></tr></thead>
+            <tbody>${rows.slice(0,25).map(r=>`<tr><td>${esc(r.item_code)} - ${esc(r.item_name)}</td><td>${esc(r.end_balance)}</td></tr>`).join('')}</tbody>
+          </table>
+          <p class="small" style="margin-top:8px">Vista de emergencia activa. Ya no deberia verse en blanco.</p>`;
+        msg.textContent='Datos cargados.';
+      }catch(e){
+        msg.textContent='Error: '+String(e||'Error desconocido');
+      }
+    };
+  }
+  setTimeout(()=>{
+    try{
+      const app=document.getElementById('app');
+      if(!app) return;
+      const hasVisible=String(app.innerText||'').trim().length>0 || String(app.innerHTML||'').indexOf('<input id=\"u\"')>=0;
+      if(!hasVisible){
+        renderEmergency(app);
+      }
+    }catch(_e){}
+  }, 1200);
+})();
+</script>
 </body>
 </html>
 
