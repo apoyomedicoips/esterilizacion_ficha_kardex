@@ -8,6 +8,8 @@ const CONFIG = {
   SESSION_PREFIX: 'SESSION_',
   USERS_PROP_KEY: 'KARDEX_USERS_JSON',
   PASSWORD_PEPPER_KEY: 'KARDEX_PASSWORD_PEPPER',
+  BACKUP_CSV_PROP_KEY: 'KARDEX_MOVEMENTS_BACKUP_CSV_ID',
+  BACKUP_CSV_NAME: 'kardex_movements_backup.csv',
   DEFAULT_PROVIDER: 'CONSORCIO CDB',
   WARMUP_TRIGGER_FN: 'warmupDashboardCachesJob',
   WARMUP_TRIGGER_HOUR: 4
@@ -405,7 +407,7 @@ function createMovement(payload) {
   }
 
   const ws = getSheet_(SHEETS.MOVEMENTS.name, SHEETS.MOVEMENTS.headers);
-  ws.appendRow([
+  const rowData = [
     Utilities.getUuid(),
     movementDate,
     itemCode,
@@ -416,7 +418,24 @@ function createMovement(payload) {
     notes,
     session.username,
     new Date().toISOString()
-  ]);
+  ];
+  ws.appendRow(rowData);
+  try {
+    appendMovementBackupCsv_(rowData);
+  } catch (e) {
+    // Keep data integrity: if CSV backup fails, revert the spreadsheet append.
+    try {
+      const lastRow = ws.getLastRow();
+      const lastId = String(ws.getRange(lastRow, 1, 1, 1).getValue() || '');
+      if (lastId === String(rowData[0])) {
+        ws.deleteRow(lastRow);
+      }
+    } catch (_revertErr) {
+      // Ignore rollback failure.
+    }
+    audit_('ERROR', 'MovementBackupCSV', itemCode, String(e && e.message ? e.message : e), session.username);
+    throw new Error('No se pudo guardar la copia de seguridad CSV. El movimiento fue revertido.');
+  }
 
   audit_('CREATE', 'Movement', itemCode, `${moveType} qty=${quantity} provider_or_area=${serviceName}`, session.username);
   return { ok: true };
@@ -918,6 +937,14 @@ function saveUsers_(users) {
 
 function ensureDefaultUsers_() {
   const users = getUsers_();
+  let changed = false;
+
+  // Legacy username normalization requested by operations.
+  if (users.olga161718 && users.olga161718.active !== false) {
+    users.olga161718.active = false;
+    changed = true;
+  }
+
   const defaults = [
     { username: 'user', password: '123', role: 'admin' },
     { username: 'florencia', password: '123', role: 'operator' },
@@ -926,10 +953,9 @@ function ensureDefaultUsers_() {
     { username: 'gregoria', password: '101112', role: 'operator' },
     { username: 'nohelia', password: '131415', role: 'operator' },
     { username: 'olga', password: '161718', role: 'operator' },
-    { username: 'olga161718', password: '161718', role: 'operator' }
+    { username: 'claudia', password: '192021', role: 'operator' }
   ];
 
-  let changed = false;
   for (let i = 0; i < defaults.length; i++) {
     const d = defaults[i];
     const uname = String(d.username || '').trim().toLowerCase();
@@ -944,6 +970,64 @@ function ensureDefaultUsers_() {
     changed = true;
   }
   if (changed) saveUsers_(users);
+}
+
+function ensureBackupCsvFile_() {
+  const props = PropertiesService.getScriptProperties();
+  const key = CONFIG.BACKUP_CSV_PROP_KEY;
+  const knownId = String(props.getProperty(key) || '').trim();
+  if (knownId) {
+    try {
+      return DriveApp.getFileById(knownId);
+    } catch (_e) {
+      // Continue and recreate.
+    }
+  }
+
+  const header = [
+    'movement_id',
+    'movement_date',
+    'item_code',
+    'service_name',
+    'move_type',
+    'quantity',
+    'ticket_no',
+    'notes',
+    'username',
+    'created_at'
+  ].join(',') + '\n';
+
+  let file = null;
+  const ssFile = DriveApp.getFileById(CONFIG.SPREADSHEET_ID);
+  const parents = ssFile.getParents();
+  if (parents.hasNext()) {
+    const folder = parents.next();
+    const files = folder.getFilesByName(CONFIG.BACKUP_CSV_NAME);
+    file = files.hasNext() ? files.next() : folder.createFile(CONFIG.BACKUP_CSV_NAME, header, MimeType.CSV);
+  } else {
+    const files = DriveApp.getFilesByName(CONFIG.BACKUP_CSV_NAME);
+    file = files.hasNext() ? files.next() : DriveApp.createFile(CONFIG.BACKUP_CSV_NAME, header, MimeType.CSV);
+  }
+
+  props.setProperty(key, file.getId());
+  if (file.getSize() === 0) {
+    file.setContent(header);
+  }
+  return file;
+}
+
+function appendMovementBackupCsv_(rowData) {
+  const file = ensureBackupCsvFile_();
+  const line = rowData.map((v) => escapeCsvCell_(v)).join(',') + '\n';
+  const current = file.getBlob().getDataAsString('UTF-8');
+  file.setContent(current + line);
+}
+
+function escapeCsvCell_(value) {
+  const raw = String(value == null ? '' : value);
+  const escaped = raw.replace(/"/g, '""');
+  if (/[",\n\r]/.test(escaped)) return '"' + escaped + '"';
+  return escaped;
 }
 
 function ensureDefaultProviders_() {
