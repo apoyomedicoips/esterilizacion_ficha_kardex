@@ -731,6 +731,7 @@ const state = {
   trackingMonth: localStorage.getItem('kardex_track_month') || '',
   trackingRaw: null,
   trackingCache: {},
+  trackingPedidoExport: null,
   semaforo: {
     rojo: Number(localStorage.getItem('kardex_sem_rojo') || 50),
     amarillo: Number(localStorage.getItem('kardex_sem_amarillo') || 150)
@@ -1155,6 +1156,10 @@ async function renderTracking(){
         <select id="t_stockDay"></select>
       </div>
     </div>
+    <div class="btn-row" id="trackingPedidoExportRow" style="margin-bottom:8px;display:none">
+      <button id="t_exportPedidoExcel" style="background:#0f6780;width:auto">Exportar pedido Excel</button>
+      <button id="t_exportPedidoWord" style="background:#7b5d12;width:auto">Generar pedido Word</button>
+    </div>
     <div id="trackingPedidoNote" class="note" style="margin-bottom:8px;display:none"></div>
     <div id="trackingTable" class="table" style="overflow:auto;max-height:72vh"></div>
     <div id="trackingVerifTable" class="table" style="margin-top:10px;display:none"></div>
@@ -1255,6 +1260,7 @@ async function renderTracking(){
 
   function renderTrackingPedido(raw){
     const controls=document.getElementById('trackingPedidoControls');
+    const exportRow=document.getElementById('trackingPedidoExportRow');
     const note=document.getElementById('trackingPedidoNote');
     const table=document.getElementById('trackingPedidoTable');
     const daySel=document.getElementById('t_stockDay');
@@ -1263,12 +1269,15 @@ async function renderTracking(){
     if(!controls||!note||!table||!daySel||!currSel||!prevSel) return;
     if(!raw||!raw.rows||!raw.rows.length){
       controls.style.display='none';
+      if(exportRow) exportRow.style.display='none';
       note.style.display='none';
       table.style.display='none';
+      state.trackingPedidoExport=null;
       return;
     }
 
     controls.style.display='';
+    if(exportRow) exportRow.style.display='';
     table.style.display='';
     note.style.display='';
 
@@ -1344,6 +1353,14 @@ async function renderTracking(){
     lines.sort((a,b)=>b.pedido-a.pedido||b.consumo10-a.consumo10||String(a.code).localeCompare(String(b.code)));
     const totalPedido=lines.reduce((a,r)=>a+Number(r.pedido||0),0);
     const totalConsumo=lines.reduce((a,r)=>a+Number(r.consumo10||0),0);
+    state.trackingPedidoExport={
+      month: String(raw.month||''),
+      stockDay: stockDay,
+      currBlockLabel: currBlock.label,
+      prevBlockMode: String(prevSel.value||'auto'),
+      rows: lines,
+      totals: { totalPedido, totalConsumo }
+    };
     note.innerHTML=`<strong>Calculo de pedido:</strong> consumo 10 dias = MAX(consumo bloque actual, consumo bloque mes anterior). Se agrega 30% de seguridad. <strong>Stock actual</strong> calculado al dia ${stockDay}. Pedido sugerido = MAX(0, Suma - Stock actual). Total pedido sugerido: <strong>${fmt(totalPedido)}</strong> unidades.`;
 
     table.innerHTML=`<table>
@@ -1429,6 +1446,8 @@ async function renderTracking(){
   document.getElementById('t_currBlock').onchange=()=>renderTrackingPedido(state.trackingRaw);
   document.getElementById('t_prevBlock').onchange=()=>renderTrackingPedido(state.trackingRaw);
   document.getElementById('t_stockDay').onchange=()=>renderTrackingPedido(state.trackingRaw);
+  document.getElementById('t_exportPedidoExcel').onclick=()=>exportTrackingPedidoExcel();
+  document.getElementById('t_exportPedidoWord').onclick=()=>exportTrackingPedidoWord();
 
   document.getElementById('t_verifBtn').onclick=async()=>{
     const verif=document.getElementById('trackingVerifTable');
@@ -1752,6 +1771,71 @@ function exportClosureWord(){
     </table>
   </body></html>`;
   downloadBlob(`Reporte_Cierre_${data.model.cutoffLabel}.doc`, 'application/msword', wordHtml);
+}
+
+function exportTrackingPedidoExcel(){
+  const data=state.trackingPedidoExport;
+  if(!data||!data.rows||!data.rows.length){ showMsg('No hay calculo de pedido para exportar.'); return; }
+  const rows=data.rows.map(r=>`
+    <tr>
+      <td>${esc(r.code)}</td>
+      <td>${Math.round(Number(r.prev10||0))}</td>
+      <td>${Math.round(Number(r.curr10||0))}</td>
+      <td>${Math.round(Number(r.consumo10||0))}</td>
+      <td>${Math.round(Number(r.plus30||0))}</td>
+      <td>${Math.round(Number(r.suma||0))}</td>
+      <td>${Math.round(Number(r.stockActual||0))}</td>
+      <td>${Math.round(Number(r.pedido||0))}</td>
+    </tr>`).join('');
+  const html=`<html><head><meta charset="utf-8"></head><body>
+    <h3>CALCULO DE PEDIDO SUGERIDO - ESTERILIZACION</h3>
+    <p>Mes: ${esc(data.month)} | Bloque actual: ${esc(data.currBlockLabel)} | Dia stock actual: ${fmt(data.stockDay)}</p>
+    <table border="1" cellspacing="0" cellpadding="4">
+      <tr>
+        <th>ITEM</th>
+        <th>CONSUMO 10 DIAS MES ANTERIOR</th>
+        <th>CONSUMO 10 DIAS MES ACTUAL</th>
+        <th>CONSUMO 10 DIAS</th>
+        <th>30%</th>
+        <th>Suma</th>
+        <th>Stock actual</th>
+        <th>Pedido</th>
+      </tr>
+      ${rows}
+      <tr>
+        <td><b>TOTAL</b></td>
+        <td>-</td><td>-</td>
+        <td><b>${Math.round(Number(data.totals.totalConsumo||0))}</b></td>
+        <td>-</td><td>-</td><td>-</td>
+        <td><b>${Math.round(Number(data.totals.totalPedido||0))}</b></td>
+      </tr>
+    </table>
+  </body></html>`;
+  downloadBlob(`Pedido_Sugerido_${data.month}.xls`, 'application/vnd.ms-excel', html);
+}
+
+function exportTrackingPedidoWord(){
+  const data=state.trackingPedidoExport;
+  if(!data||!data.rows||!data.rows.length){ showMsg('No hay calculo de pedido para exportar.'); return; }
+  const top=data.rows.filter(r=>Number(r.pedido||0)>0).slice(0,10);
+  const wordHtml=`<html><head><meta charset="utf-8"></head><body>
+    <h2>REPORTE DE PEDIDO SUGERIDO - AREA DE ESTERILIZACION</h2>
+    <p><b>Mes:</b> ${esc(data.month)} &nbsp; <b>Bloque actual:</b> ${esc(data.currBlockLabel)} &nbsp; <b>Dia stock actual:</b> ${fmt(data.stockDay)}</p>
+    <p><b>Total consumo base:</b> ${fmt(Math.round(Number(data.totals.totalConsumo||0)))} &nbsp; <b>Total pedido sugerido:</b> ${fmt(Math.round(Number(data.totals.totalPedido||0)))}</p>
+    <p><b>Items prioritarios (pedido mayor):</b> ${top.length?top.map(x=>`${x.code} (${fmt(x.pedido)})`).join(', '):'Sin pedido pendiente'}.</p>
+    <table border="1" cellspacing="0" cellpadding="4">
+      <tr><th>ITEM</th><th>Consumo base</th><th>30%</th><th>Suma</th><th>Stock actual</th><th>Pedido</th></tr>
+      ${data.rows.map(r=>`<tr>
+        <td>${esc(r.code)}</td>
+        <td>${fmt(Math.round(Number(r.consumo10||0)))}</td>
+        <td>${fmt(Math.round(Number(r.plus30||0)))}</td>
+        <td>${fmt(Math.round(Number(r.suma||0)))}</td>
+        <td>${fmt(Math.round(Number(r.stockActual||0)))}</td>
+        <td>${fmt(Math.round(Number(r.pedido||0)))}</td>
+      </tr>`).join('')}
+    </table>
+  </body></html>`;
+  downloadBlob(`Reporte_Pedido_${data.month}.doc`, 'application/msword', wordHtml);
 }
 
 function getFilteredDashboardOut(raw){
@@ -2467,6 +2551,7 @@ function invalidateDashboardClientCache(){
   state.dashboardTableKey='';
   state.trackingCache={};
   state.trackingRaw=null;
+  state.trackingPedidoExport=null;
 }
 
 async function loadDashboard(force){
