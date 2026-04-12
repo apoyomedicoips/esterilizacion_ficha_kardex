@@ -717,17 +717,37 @@
   </div>
 
 <script>
+const _ls = (() => {
+  try {
+    const t = '__kardex_ls_test__';
+    window.localStorage.setItem(t, '1');
+    window.localStorage.removeItem(t);
+    return window.localStorage;
+  } catch (_e) {
+    const mem = {};
+    return {
+      getItem: (k) => (Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null),
+      setItem: (k, v) => {
+        mem[k] = String(v);
+      },
+      removeItem: (k) => {
+        delete mem[k];
+      }
+    };
+  }
+})();
+
 const state = {
-  token: localStorage.getItem('kardex_token') || '',
+  token: _ls.getItem('kardex_token') || '',
   user: null,
   bootstrap: null,
   dashboard: null,
   dashboardRaw: null,
-  dashboardMonth: localStorage.getItem('kardex_dash_month') || '',
+  dashboardMonth: _ls.getItem('kardex_dash_month') || '',
   dashboardMonthCache: {},
   selectedItems: null,
-  selectedSheetItem: localStorage.getItem('kardex_selected_item') || '',
-  cutoffDay: Number(localStorage.getItem('kardex_cutoff_day') || 0),
+  selectedSheetItem: _ls.getItem('kardex_selected_item') || '',
+  cutoffDay: Number(_ls.getItem('kardex_cutoff_day') || 0),
   currentView: 'dashboard',
   movementType: 'OUT',
   chartInstances: {},
@@ -735,23 +755,23 @@ const state = {
   closureRaw: null,
   closureMonth: '',
   closureCache: {},
-  trackingMonth: localStorage.getItem('kardex_track_month') || '',
+  trackingMonth: _ls.getItem('kardex_track_month') || '',
   trackingRaw: null,
   trackingCache: {},
   trackingPedidoExport: null,
-  laundryMonth: localStorage.getItem('kardex_laundry_month') || '',
+  laundryMonth: _ls.getItem('kardex_laundry_month') || '',
   laundryRaw: null,
-  editMonth: localStorage.getItem('kardex_edit_month') || '',
+  editMonth: _ls.getItem('kardex_edit_month') || '',
   editRaw: null,
   editSelectedId: '',
   estimationMonth: '',
   semaforo: {
-    rojo: Number(localStorage.getItem('kardex_sem_rojo') || 50),
-    amarillo: Number(localStorage.getItem('kardex_sem_amarillo') || 150)
+    rojo: Number(_ls.getItem('kardex_sem_rojo') || 50),
+    amarillo: Number(_ls.getItem('kardex_sem_amarillo') || 150)
   },
   semaforoArea: {
-    amarillo: Number(localStorage.getItem('kardex_area_amarillo') || 120),
-    rojo: Number(localStorage.getItem('kardex_area_rojo') || 280)
+    amarillo: Number(_ls.getItem('kardex_area_amarillo') || 120),
+    rojo: Number(_ls.getItem('kardex_area_rojo') || 280)
   }
 };
 
@@ -838,7 +858,7 @@ function render(){
     if(state.currentView==='audit') renderAudit();
   }catch(e){
     console.error('Render error', e);
-    localStorage.removeItem('kardex_token');
+    _ls.removeItem('kardex_token');
     state.token='';
     state.user=null;
     state.bootstrap=null;
@@ -880,7 +900,7 @@ function renderLogin(){
 
       const out=await safeServer('login',{username,password});
       state.token=out.token;
-      localStorage.setItem('kardex_token',state.token);
+      _ls.setItem('kardex_token',state.token);
       state.user=out.user;
       await loadBootstrap();
       state.currentView='dashboard';
@@ -938,7 +958,7 @@ function renderShell(){
 
   addMenuBtn(menu,'Salir','logout',async()=>{
     try{ await safeServer('logout',state.token); }catch(_e){}
-    localStorage.removeItem('kardex_token');
+    _ls.removeItem('kardex_token');
     state.token=''; state.user=null; state.bootstrap=null;
     renderLogin();
   });
@@ -1086,16 +1106,16 @@ async function renderDashboard(){
     if(amarillo<rojo){ showMsg('El umbral amarillo debe ser mayor o igual al rojo.'); return; }
     state.semaforo.rojo=rojo;
     state.semaforo.amarillo=amarillo;
-    localStorage.setItem('kardex_sem_rojo',String(rojo));
-    localStorage.setItem('kardex_sem_amarillo',String(amarillo));
+    _ls.setItem('kardex_sem_rojo',String(rojo));
+    _ls.setItem('kardex_sem_amarillo',String(amarillo));
     if(state.dashboardRaw) renderDashboardPanels();
   };
   document.getElementById('semReset').onclick=()=>{
     state.semaforo={rojo:50, amarillo:150};
     document.getElementById('semRojo').value=50;
     document.getElementById('semAmarillo').value=150;
-    localStorage.setItem('kardex_sem_rojo','50');
-    localStorage.setItem('kardex_sem_amarillo','150');
+    _ls.setItem('kardex_sem_rojo','50');
+    _ls.setItem('kardex_sem_amarillo','150');
     if(state.dashboardRaw) renderDashboardPanels();
   };
   document.getElementById('semAreaApply').onclick=()=>{
@@ -1103,21 +1123,21 @@ async function renderDashboard(){
     const r=Math.max(0,Number(document.getElementById('semAreaRojo').value||0));
     if(r<y){ showMsg('El umbral rojo de area debe ser mayor o igual al amarillo.'); return; }
     state.semaforoArea.amarillo=y; state.semaforoArea.rojo=r;
-    localStorage.setItem('kardex_area_amarillo',String(y));
-    localStorage.setItem('kardex_area_rojo',String(r));
+    _ls.setItem('kardex_area_amarillo',String(y));
+    _ls.setItem('kardex_area_rojo',String(r));
     if(state.dashboardRaw) renderDashboardPanels();
   };
   document.getElementById('semAreaReset').onclick=()=>{
     state.semaforoArea={amarillo:120, rojo:280};
     document.getElementById('semAreaAmarillo').value=120;
     document.getElementById('semAreaRojo').value=280;
-    localStorage.setItem('kardex_area_amarillo','120');
-    localStorage.setItem('kardex_area_rojo','280');
+    _ls.setItem('kardex_area_amarillo','120');
+    _ls.setItem('kardex_area_rojo','280');
     if(state.dashboardRaw) renderDashboardPanels();
   };
   document.getElementById('cutoffDay').onchange=(e)=>{
     state.cutoffDay = Number(e.target.value || 0);
-    localStorage.setItem('kardex_cutoff_day', String(state.cutoffDay || 0));
+    _ls.setItem('kardex_cutoff_day', String(state.cutoffDay || 0));
     if(state.dashboardRaw){
       renderDashboardPanels();
     }
@@ -1163,7 +1183,7 @@ async function renderClosure(){
 
   document.getElementById('c_cutoffDay').onchange=()=>{
     state.cutoffDay = Number(document.getElementById('c_cutoffDay').value || 0);
-    localStorage.setItem('kardex_cutoff_day', String(state.cutoffDay || 0));
+    _ls.setItem('kardex_cutoff_day', String(state.cutoffDay || 0));
     renderClosureTable();
   };
   document.getElementById('c_loadBtn').onclick=async()=>{ await loadClosureData(true); };
@@ -1466,7 +1486,7 @@ async function renderTracking(){
     if(!mi) return;
     const selectedMonth=mi.value;
     state.trackingMonth=selectedMonth;
-    localStorage.setItem('kardex_track_month',selectedMonth);
+    _ls.setItem('kardex_track_month',selectedMonth);
     updateHeaderMonth(selectedMonth);
     if(!force&&state.trackingCache[selectedMonth]){
       state.trackingRaw=state.trackingCache[selectedMonth];
@@ -1477,7 +1497,7 @@ async function renderTracking(){
     }
     try{
       const out=await safeServer('getMonthlyClosure',{token:state.token,month:selectedMonth});
-      if(out&&out.month){ mi.value=out.month; state.trackingMonth=out.month; localStorage.setItem('kardex_track_month',out.month); }
+      if(out&&out.month){ mi.value=out.month; state.trackingMonth=out.month; _ls.setItem('kardex_track_month',out.month); }
       state.trackingRaw=out;
       if(state.trackingMonth) state.trackingCache[state.trackingMonth]=out;
       renderTrackingTable(state.trackingRaw,trackingMode);
@@ -1604,19 +1624,19 @@ function initHeaderMonthInput(){
       const mi=document.getElementById('month');
       if(mi) mi.value=m;
       state.dashboardMonth=m;
-      localStorage.setItem('kardex_dash_month',m);
+      _ls.setItem('kardex_dash_month',m);
       loadDashboard(true);
     } else if(state.currentView==='tracking'){
       const mi=document.getElementById('t_month');
       if(mi) mi.value=m;
       state.trackingMonth=m;
-      localStorage.setItem('kardex_track_month',m);
+      _ls.setItem('kardex_track_month',m);
       const btn=document.getElementById('t_loadBtn'); if(btn) btn.click();
     } else if(state.currentView==='estimation'){
       const mi=document.getElementById('t_month');
       if(mi) mi.value=m;
       state.trackingMonth=m;
-      localStorage.setItem('kardex_track_month',m);
+      _ls.setItem('kardex_track_month',m);
       const btn=document.getElementById('t_loadBtn'); if(btn) btn.click();
     } else if(state.currentView==='closure'){
       const mi=document.getElementById('c_month');
@@ -1942,7 +1962,7 @@ function syncCutoffSelector(days, targetId){
   let desired=Number(state.cutoffDay||0);
   if(!desired || desired<1 || desired>maxDay) desired=maxDay;
   state.cutoffDay=desired;
-  localStorage.setItem('kardex_cutoff_day', String(desired));
+  _ls.setItem('kardex_cutoff_day', String(desired));
   sel.innerHTML=days.map(d=>{
     const n=Number(d||0);
     const tag = n===maxDay ? ' (fin de mes)' : '';
@@ -2186,7 +2206,7 @@ function ensureSelectedSheetItem(model){
     Number(a.cutoff_balance||0)-Number(b.cutoff_balance||0)
   )[0];
   state.selectedSheetItem=String((critical && critical.item_code) || rows[0].item_code || '');
-  localStorage.setItem('kardex_selected_item', state.selectedSheetItem);
+  _ls.setItem('kardex_selected_item', state.selectedSheetItem);
 }
 
 function getSelectedItemModel(out, model){
@@ -2647,7 +2667,7 @@ async function loadDashboard(force){
     const monthInput=document.getElementById('month');
     let selectedMonth=String(monthInput.value||'');
     state.dashboardMonth=selectedMonth;
-    localStorage.setItem('kardex_dash_month', selectedMonth);
+    _ls.setItem('kardex_dash_month', selectedMonth);
 
     let out=null;
     if(!force && state.dashboardMonthCache[selectedMonth]){
@@ -2671,7 +2691,7 @@ async function loadDashboard(force){
         const prevMonth=selectedMonth;
         selectedMonth=latestMonth;
         state.dashboardMonth=latestMonth;
-        localStorage.setItem('kardex_dash_month', latestMonth);
+        _ls.setItem('kardex_dash_month', latestMonth);
         showMsg(`No hay movimientos en ${prevMonth}. Se cargó automáticamente ${latestMonth}.`, true);
       }
     }
@@ -2775,7 +2795,7 @@ function renderMovements(){
 
   if(!state.selectedSheetItem && items.length){
     state.selectedSheetItem=String(items[0].item_code||'');
-    localStorage.setItem('kardex_selected_item', state.selectedSheetItem);
+    _ls.setItem('kardex_selected_item', state.selectedSheetItem);
   }
 
   app.innerHTML=`
@@ -2981,7 +3001,7 @@ function renderMovements(){
         const code=String(btn.getAttribute('data-code')||'');
         itemSelect.value=code;
         state.selectedSheetItem=code;
-        localStorage.setItem('kardex_selected_item', code);
+        _ls.setItem('kardex_selected_item', code);
         renderMovementItemList();
         applyMovementVisuals();
       };
@@ -2993,7 +3013,7 @@ function renderMovements(){
   }
   itemSelect.onchange=()=>{
     state.selectedSheetItem=String(itemSelect.value||'');
-    localStorage.setItem('kardex_selected_item', state.selectedSheetItem);
+    _ls.setItem('kardex_selected_item', state.selectedSheetItem);
     renderMovementItemList();
     applyMovementVisuals();
   };
@@ -3237,7 +3257,7 @@ async function renderEditMovements(){
     state.editRaw=out;
     state.editSelectedId='';
     state.editMonth=month;
-    localStorage.setItem('kardex_edit_month', month);
+    _ls.setItem('kardex_edit_month', month);
     renderTable();
   }
 
@@ -3376,7 +3396,7 @@ async function renderLaundry(){
     const out=await safeServer('listLaundryRecords',{token:state.token,month,limit:1000});
     state.laundryRaw=out;
     state.laundryMonth=month;
-    localStorage.setItem('kardex_laundry_month', month);
+    _ls.setItem('kardex_laundry_month', month);
     renderLaundryTable(out);
   }
 
@@ -3903,7 +3923,7 @@ function readFileAsEvidence(file){
     }
     render();
   }catch(_e){
-    localStorage.removeItem('kardex_token');
+    _ls.removeItem('kardex_token');
     state.token='';
     state.user=null;
     state.bootstrap=null;
@@ -3914,3 +3934,4 @@ function readFileAsEvidence(file){
 </script>
 </body>
 </html>
+
