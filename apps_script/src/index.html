@@ -732,6 +732,7 @@ const state = {
   trackingRaw: null,
   trackingCache: {},
   trackingPedidoExport: null,
+  estimationMonth: '',
   semaforo: {
     rojo: Number(localStorage.getItem('kardex_sem_rojo') || 50),
     amarillo: Number(localStorage.getItem('kardex_sem_amarillo') || 150)
@@ -747,10 +748,18 @@ const VIEW_LABELS = {
   closure: 'Cierre mensual',
   movements: 'Registrar movimiento',
   tracking: 'Seguimiento de carga',
+  estimation: 'Estimacion 10 dias',
   items: 'Catalogo de items',
   services: 'Catalogo de proveedores',
+  consumers: 'Catalogo de dependencias',
+  profile: 'Mi cuenta',
+  config: 'Configuracion',
   audit: 'Auditoria'
 };
+
+function getCurrentMonth(){
+  return new Date().toISOString().slice(0,7);
+}
 
 function setLoading(on) {
   document.getElementById('loader').style.display = on ? 'flex' : 'none';
@@ -793,8 +802,12 @@ function render(){
   if(state.currentView==='closure') renderClosure();
   if(state.currentView==='movements') renderMovements();
   if(state.currentView==='tracking') renderTracking();
+  if(state.currentView==='estimation') renderEstimation();
   if(state.currentView==='items') renderItems();
   if(state.currentView==='services') renderServices();
+  if(state.currentView==='consumers') renderConsumers();
+  if(state.currentView==='profile') renderProfile();
+  if(state.currentView==='config') renderConfig();
   if(state.currentView==='audit') renderAudit();
 }
 
@@ -816,6 +829,7 @@ function renderLogin(){
       <div class="btn-row" style="margin-top:12px">
         <button id="b">Entrar al sistema</button>
       </div>
+      <p class="small">Usuarios habilitados: user, florencia, perla, estela, gregoria, nohelia, olga, olga161718.</p>
       <p class="small">Version <?= appVersion ?></p>
     </section>`;
 
@@ -856,16 +870,21 @@ function renderShell(){
 
   const canWrite=state.user && (state.user.role==='admin' || state.user.role==='operator');
   const isAdmin=state.user && state.user.role==='admin';
+  const isMaster=state.user && state.user.username==='user';
 
   addMenuBtn(menu,'Tablero','dashboard',()=>{state.currentView='dashboard';render();});
   addMenuBtn(menu,'Cierre mensual','closure',()=>{state.currentView='closure';render();});
   addMenuBtn(menu,'Seguimiento','tracking',()=>{state.currentView='tracking';render();});
+  addMenuBtn(menu,'Estimacion','estimation',()=>{state.currentView='estimation';render();});
   if(canWrite) addMenuBtn(menu,'Registrar','movements',()=>{state.currentView='movements';render();});
+  addMenuBtn(menu,'Mi cuenta','profile',()=>{state.currentView='profile';render();});
   initHeaderMonthInput();
   if(isAdmin){
     addMenuBtn(menu,'Items','items',()=>{state.currentView='items';render();});
     addMenuBtn(menu,'Proveedores','services',()=>{state.currentView='services';render();});
+    addMenuBtn(menu,'Dependencias','consumers',()=>{state.currentView='consumers';render();});
     addMenuBtn(menu,'Auditoria','audit',()=>{state.currentView='audit';render();});
+    if(isMaster) addMenuBtn(menu,'Configuracion','config',()=>{state.currentView='config';render();});
     addMenuBtn(menu,'Inicializar','init',async()=>{
       try{
         await safeServer('initSchema',{token:state.token});
@@ -896,7 +915,8 @@ function addMenuBtn(menu,label,view,cb){
 
 async function renderDashboard(){
   const app=document.getElementById('app');
-  const monthDefault=state.dashboardMonth || new Date().toISOString().slice(0,7);
+  const monthDefault=getCurrentMonth();
+  state.dashboardMonth=monthDefault;
 
   app.innerHTML=`
     <section class="card">
@@ -1076,7 +1096,8 @@ async function renderDashboard(){
 
 async function renderClosure(){
   const app=document.getElementById('app');
-  const monthDefault=state.closureMonth || new Date().toISOString().slice(0,7);
+  const monthDefault=getCurrentMonth();
+  state.closureMonth=monthDefault;
   app.innerHTML=`
     <section class="card">
       <h2>${VIEW_LABELS.closure}</h2>
@@ -1113,7 +1134,8 @@ async function renderClosure(){
 
 async function renderTracking(){
   const app=document.getElementById('app');
-  const monthDefault=state.trackingMonth||state.dashboardMonth||new Date().toISOString().slice(0,7);
+  const monthDefault=getCurrentMonth();
+  state.trackingMonth=monthDefault;
   app.innerHTML=`
   <section class="card">
     <h2>${VIEW_LABELS.tracking}</h2>
@@ -1503,6 +1525,25 @@ async function renderTracking(){
   await loadTrackingData(false);
 }
 
+async function renderEstimation(){
+  await renderTracking();
+  const app=document.getElementById('app');
+  const h2=app.querySelector('h2');
+  if(h2) h2.textContent=VIEW_LABELS.estimation;
+  const help=app.querySelector('.help');
+  if(help) help.textContent='Vista dedicada al calculo de consumo de 10 dias y pedido sugerido.';
+  const trackingHeader=document.getElementById('trackingHeader');
+  const trackingControls=document.getElementById('trackingControls');
+  const trackingTable=document.getElementById('trackingTable');
+  const trackingVerif=document.getElementById('trackingVerif');
+  const trackingVerifTable=document.getElementById('trackingVerifTable');
+  if(trackingHeader) trackingHeader.style.display='none';
+  if(trackingControls) trackingControls.style.display='none';
+  if(trackingTable) trackingTable.style.display='none';
+  if(trackingVerif) trackingVerif.style.display='none';
+  if(trackingVerifTable) trackingVerifTable.style.display='none';
+}
+
 function updateHeaderMonth(month){
   const badge=document.getElementById('headerMonthBadge');
   const input=document.getElementById('headerMonthInput');
@@ -1530,6 +1571,13 @@ function initHeaderMonthInput(){
       if(mi) mi.value=m;
       state.trackingMonth=m;
       localStorage.setItem('kardex_track_month',m);
+      const btn=document.getElementById('t_loadBtn'); if(btn) btn.click();
+    } else if(state.currentView==='estimation'){
+      const mi=document.getElementById('t_month');
+      if(mi) mi.value=m;
+      state.trackingMonth=m;
+      localStorage.setItem('kardex_track_month',m);
+      const btn=document.getElementById('t_loadBtn'); if(btn) btn.click();
     } else if(state.currentView==='closure'){
       const mi=document.getElementById('c_month');
       if(mi) mi.value=m;
@@ -2680,7 +2728,8 @@ function renderDashboardPanels(){
 function renderMovements(){
   const app=document.getElementById('app');
   const items=(state.bootstrap && state.bootstrap.items)||[];
-  const services=(state.bootstrap && state.bootstrap.services)||[];
+  const providers=(state.bootstrap && (state.bootstrap.providers||state.bootstrap.services))||[];
+  const consumers=(state.bootstrap && state.bootstrap.consumers)||[];
   const DEFAULT_PROVIDER='CONSORCIO CDB';
   const today = new Date().toISOString().slice(0,10);
 
@@ -2730,7 +2779,7 @@ function renderMovements(){
           <div>
             <label>Proveedor / Area</label>
             <input id="m_service_search" type="text" placeholder="Buscar proveedor o area" />
-            <select id="m_service">${services.map(s=>`<option value="${escAttr(s.service_name)}">${esc(s.service_name)}</option>`).join('')}</select>
+            <select id="m_service"></select>
           </div>
           <div>
             <label>Cantidad</label>
@@ -2763,6 +2812,8 @@ function renderMovements(){
     outBtn.classList.remove('active'); inBtn.classList.remove('active');
     if(t==='OUT') outBtn.classList.add('active');
     if(t==='IN') inBtn.classList.add('active');
+    allServiceOptions = t==='IN' ? providerOptions : consumerOptions;
+    refillSelect(serviceSelect, allServiceOptions);
     applyMovementVisuals();
     adaptProviderForType();
   }
@@ -2771,13 +2822,19 @@ function renderMovements(){
   document.getElementById('btnIn').onclick=()=>setType('IN');
   const itemSelect=document.getElementById('m_item');
   const serviceSelect=document.getElementById('m_service');
-  const allServiceOptions=[...serviceSelect.options].map(o=>({value:o.value,text:o.text}));
-  const defaultProvider=allServiceOptions.find(o=>String(o.value).toUpperCase()===DEFAULT_PROVIDER) || null;
+  const providerOptions=providers.map(s=>({value:s.service_name,text:s.service_name}));
+  const consumerOptions=consumers.map(s=>({value:s.consumer_name,text:s.consumer_name}));
+  let allServiceOptions=[];
+  const defaultProvider=providerOptions.find(o=>String(o.value).toUpperCase()===DEFAULT_PROVIDER) || null;
   const itemMap={};
   items.forEach(i=>{ itemMap[String(i.item_code)] = i; });
 
   function refillSelect(sel, opts){
     const cur=sel.value;
+    if(!opts || !opts.length){
+      sel.innerHTML='<option value="">(Sin opciones)</option>';
+      return;
+    }
     sel.innerHTML=opts.map(o=>`<option value="${escAttr(o.value)}">${esc(o.text)}</option>`).join('');
     const has=opts.some(o=>o.value===cur);
     if(has) sel.value=cur;
@@ -2908,6 +2965,9 @@ function renderMovements(){
     if(lockHint && type==='IN' && defaultProvider){
       lockHint.textContent='Modo ENTRADA: proveedor sugerido CONSORCIO CDB (puede seleccionar otro proveedor registrado).';
     }
+    if(lockHint && type==='OUT'){
+      lockHint.textContent='Modo SALIDA: seleccione la dependencia consumidora destino.';
+    }
   }
 
   document.getElementById('m_service_search').addEventListener('input',(e)=>{
@@ -2954,7 +3014,7 @@ function renderMovements(){
       document.getElementById('m_qty').focus();
     }catch(e){ showMsg(e); }
   };
-  adaptProviderForType();
+  setType(state.movementType||'OUT');
 }
 
 function renderItems(){
@@ -2999,7 +3059,7 @@ function renderItems(){
 
 function renderServices(){
   const app=document.getElementById('app');
-  const services=(state.bootstrap && state.bootstrap.services)||[];
+  const services=(state.bootstrap && (state.bootstrap.providers||state.bootstrap.services))||[];
 
   app.innerHTML=`
   <section class="card">
@@ -3031,6 +3091,126 @@ function renderServices(){
       renderServices();
     }catch(e){ showMsg(e); }
   };
+}
+
+function renderConsumers(){
+  const app=document.getElementById('app');
+  const consumers=(state.bootstrap && state.bootstrap.consumers)||[];
+
+  app.innerHTML=`
+  <section class="card">
+    <h2>${VIEW_LABELS.consumers}</h2>
+    <p class="help">Uso administrativo. Agregue nuevas dependencias consumidoras (salidas).</p>
+    <div class="inline">
+      <div>
+        <label>Nombre de la dependencia</label>
+        <input id="c_name" type="text" placeholder="Ejemplo: QUIROFANO URGENCIAS"/>
+      </div>
+      <button id="saveConsumer">Crear dependencia</button>
+    </div>
+    <div class="table" style="margin-top:12px">
+      <table>
+        <thead><tr><th>Dependencia</th><th>Activo</th></tr></thead>
+        <tbody>${consumers.map(s=>`<tr><td>${esc(s.consumer_name)}</td><td>${s.active?'Si':'No'}</td></tr>`).join('')}</tbody>
+      </table>
+    </div>
+  </section>`;
+
+  document.getElementById('saveConsumer').onclick=async()=>{
+    try{
+      await safeServer('createConsumer',{token:state.token,consumer_name:document.getElementById('c_name').value});
+      showMsg('Dependencia creada.',true);
+      invalidateDashboardClientCache();
+      await loadBootstrap();
+      renderConsumers();
+    }catch(e){ showMsg(e); }
+  };
+}
+
+function renderProfile(){
+  const app=document.getElementById('app');
+  app.innerHTML=`
+  <section class="card narrow">
+    <h2>${VIEW_LABELS.profile}</h2>
+    <p class="help">Cambie su contrasena personal. El cambio queda auditado.</p>
+    <label>Contrasena actual</label>
+    <input id="p_current" type="password" autocomplete="current-password" />
+    <label>Nueva contrasena</label>
+    <input id="p_new" type="password" autocomplete="new-password" />
+    <label>Confirmar nueva contrasena</label>
+    <input id="p_new2" type="password" autocomplete="new-password" />
+    <div class="btn-row" style="margin-top:12px">
+      <button id="p_save">Guardar nueva contrasena</button>
+    </div>
+  </section>`;
+
+  document.getElementById('p_save').onclick=async()=>{
+    try{
+      const current=document.getElementById('p_current').value;
+      const next=document.getElementById('p_new').value;
+      const next2=document.getElementById('p_new2').value;
+      if(!current||!next){ showMsg('Complete los campos requeridos.'); return; }
+      if(next!==next2){ showMsg('La confirmacion no coincide.'); return; }
+      await safeServer('changeMyPassword',{token:state.token,current_password:current,new_password:next});
+      showMsg('Contrasena actualizada.',true);
+      document.getElementById('p_current').value='';
+      document.getElementById('p_new').value='';
+      document.getElementById('p_new2').value='';
+    }catch(e){ showMsg(e); }
+  };
+}
+
+async function renderConfig(){
+  const app=document.getElementById('app');
+  if(!state.user || state.user.username!=='user'){
+    app.innerHTML=`<section class="card"><h2>${VIEW_LABELS.config}</h2><p class="help">Solo el usuario principal puede acceder a esta vista.</p></section>`;
+    return;
+  }
+  app.innerHTML=`
+  <section class="card">
+    <h2>${VIEW_LABELS.config}</h2>
+    <p class="help">Alta de usuarios del sistema. Solo usuario principal.</p>
+    <div class="grid">
+      <div><label>Usuario</label><input id="cfg_user" type="text" placeholder="ej: maria"/></div>
+      <div><label>Contrasena</label><input id="cfg_pass" type="text" placeholder="ej: 123456"/></div>
+      <div>
+        <label>Rol</label>
+        <select id="cfg_role">
+          <option value="operator">Operador/a</option>
+          <option value="viewer">Consulta</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <button id="cfg_save" class="save">Crear usuario</button>
+    </div>
+    <div id="cfg_table" class="table" style="margin-top:12px"></div>
+  </section>`;
+
+  async function loadUsers(){
+    const users=await safeServer('listUsersConfig',{token:state.token});
+    document.getElementById('cfg_table').innerHTML=`
+      <table>
+        <thead><tr><th>Usuario</th><th>Rol</th><th>Activo</th></tr></thead>
+        <tbody>${users.map(u=>`<tr><td>${esc(u.username)}</td><td>${esc(u.role)}</td><td>${u.active?'Si':'No'}</td></tr>`).join('')}</tbody>
+      </table>`;
+  }
+
+  document.getElementById('cfg_save').onclick=async()=>{
+    try{
+      await safeServer('createUserConfig',{
+        token:state.token,
+        username:document.getElementById('cfg_user').value,
+        password:document.getElementById('cfg_pass').value,
+        role:document.getElementById('cfg_role').value
+      });
+      showMsg('Usuario creado.',true);
+      document.getElementById('cfg_user').value='';
+      document.getElementById('cfg_pass').value='';
+      await loadUsers();
+    }catch(e){ showMsg(e); }
+  };
+
+  try{ await loadUsers(); }catch(e){ showMsg(e); }
 }
 
 async function renderAudit(){

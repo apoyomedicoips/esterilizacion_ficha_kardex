@@ -22,6 +22,10 @@ const SHEETS = {
     name: 'SERVICES',
     headers: ['service_name', 'active', 'created_at']
   },
+  CONSUMERS: {
+    name: 'CONSUMERS',
+    headers: ['consumer_name', 'active', 'created_at']
+  },
   MOVEMENTS: {
     name: 'MOVEMENTS',
     headers: [
@@ -65,7 +69,9 @@ function getBootstrap(token) {
   }
   return {
     user: { username: session.username, role: session.role },
-    services: listServices_().filter((s) => s.active),
+    services: listProviders_().filter((s) => s.active), // backward compatibility
+    providers: listProviders_().filter((s) => s.active),
+    consumers: listConsumers_().filter((s) => s.active),
     items: listItems_().filter((i) => i.active),
     now: new Date().toISOString()
   };
@@ -387,9 +393,14 @@ function createMovement(payload) {
   if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('Cantidad invalida');
 
   if (moveType === 'IN') {
-    const providers = listServices_().map((s) => String(s.service_name || '').toUpperCase());
+    const providers = listProviders_().map((s) => String(s.service_name || '').toUpperCase());
     if (providers.indexOf(serviceName) === -1) {
       throw new Error('Proveedor no registrado. Agreguelo en Catalogo de proveedores.');
+    }
+  } else {
+    const consumers = listConsumers_().map((s) => String(s.consumer_name || '').toUpperCase());
+    if (consumers.indexOf(serviceName) === -1) {
+      throw new Error('Dependencia consumidora no registrada. Agreguela en Catalogo de dependencias.');
     }
   }
 
@@ -432,12 +443,82 @@ function createService(payload) {
   const serviceName = String((payload && payload.service_name) || '').trim().toUpperCase().slice(0, 120);
   if (!serviceName) throw new Error('Proveedor requerido');
 
-  const exists = listServices_().some((s) => s.service_name.toUpperCase() === serviceName);
+  const exists = listProviders_().some((s) => s.service_name.toUpperCase() === serviceName);
   if (exists) throw new Error('Proveedor ya existe');
 
   const ws = getSheet_(SHEETS.SERVICES.name, SHEETS.SERVICES.headers);
   ws.appendRow([serviceName, true, new Date().toISOString()]);
   audit_('CREATE', 'Provider', serviceName, '', session.username);
+  return { ok: true };
+}
+
+function createConsumer(payload) {
+  const session = requireSession_(payload && payload.token, ['admin']);
+  const name = String((payload && payload.consumer_name) || '').trim().toUpperCase().slice(0, 120);
+  if (!name) throw new Error('Dependencia requerida');
+  const exists = listConsumers_().some((c) => String(c.consumer_name || '').toUpperCase() === name);
+  if (exists) throw new Error('Dependencia ya existe');
+  const ws = getSheet_(SHEETS.CONSUMERS.name, SHEETS.CONSUMERS.headers);
+  ws.appendRow([name, true, new Date().toISOString()]);
+  audit_('CREATE', 'Consumer', name, '', session.username);
+  return { ok: true };
+}
+
+function listUsersConfig(payload) {
+  const session = requireSession_(payload && payload.token, ['admin']);
+  requireMasterAdmin_(session);
+  const users = getUsers_();
+  return Object.keys(users).sort().map((u) => ({
+    username: u,
+    role: String(users[u].role || 'operator'),
+    active: users[u].active !== false
+  }));
+}
+
+function createUserConfig(payload) {
+  const session = requireSession_(payload && payload.token, ['admin']);
+  requireMasterAdmin_(session);
+  const username = String((payload && payload.username) || '').trim().toLowerCase();
+  const password = String((payload && payload.password) || '');
+  const role = String((payload && payload.role) || 'operator').trim().toLowerCase();
+  if (!username) throw new Error('Usuario requerido');
+  if (!password || password.length < 3) throw new Error('Contrasena minima: 3 caracteres');
+  const validRole = ['admin', 'operator', 'viewer'];
+  if (validRole.indexOf(role) === -1) throw new Error('Rol invalido');
+
+  const users = getUsers_();
+  if (users[username]) throw new Error('Usuario ya existe');
+  const salt = Utilities.getUuid().replace(/-/g, '');
+  users[username] = {
+    passwordHash: hashPassword_(password, salt),
+    salt: salt,
+    role: role,
+    active: true
+  };
+  saveUsers_(users);
+  audit_('CREATE', 'User', username, `role=${role}`, session.username);
+  return { ok: true, username: username };
+}
+
+function changeMyPassword(payload) {
+  const session = requireSession_(payload && payload.token, ['admin', 'operator', 'viewer']);
+  const currentPassword = String((payload && payload.current_password) || '');
+  const newPassword = String((payload && payload.new_password) || '');
+  if (!newPassword || newPassword.length < 3) throw new Error('La nueva contrasena debe tener al menos 3 caracteres');
+
+  const users = getUsers_();
+  const user = users[session.username];
+  if (!user) throw new Error('Usuario no encontrado');
+  if (!verifyPassword_(currentPassword, user.passwordHash, user.salt)) {
+    throw new Error('Contrasena actual incorrecta');
+  }
+
+  const salt = Utilities.getUuid().replace(/-/g, '');
+  user.salt = salt;
+  user.passwordHash = hashPassword_(newPassword, salt);
+  users[session.username] = user;
+  saveUsers_(users);
+  audit_('PASSWORD_CHANGE', 'User', session.username, 'password updated', session.username);
   return { ok: true };
 }
 
@@ -524,7 +605,7 @@ function setupDefaultAdmin() {
 function upsertUser(username, password, role, active) {
   const uname = String(username || '').trim().toLowerCase();
   if (!uname) throw new Error('username required');
-  if (!password || password.length < 8) throw new Error('password too short');
+  if (!password || password.length < 3) throw new Error('password too short');
   const validRole = ['admin', 'operator', 'viewer'];
   if (validRole.indexOf(role) === -1) throw new Error('invalid role');
 
@@ -543,9 +624,11 @@ function upsertUser(username, password, role, active) {
 function ensureSchema_() {
   getSheet_(SHEETS.ITEMS.name, SHEETS.ITEMS.headers);
   getSheet_(SHEETS.SERVICES.name, SHEETS.SERVICES.headers);
+  getSheet_(SHEETS.CONSUMERS.name, SHEETS.CONSUMERS.headers);
   getSheet_(SHEETS.MOVEMENTS.name, SHEETS.MOVEMENTS.headers);
   getSheet_(SHEETS.AUDIT.name, SHEETS.AUDIT.headers);
   ensureDefaultProviders_();
+  ensureDefaultConsumers_();
   ensureDefaultUsers_();
 }
 
@@ -595,12 +678,24 @@ function listItems_() {
   })).sort((a, b) => a.item_code.localeCompare(b.item_code));
 }
 
-function listServices_() {
+function listProviders_() {
   return getRowsAsObjects_(SHEETS.SERVICES).map((r) => ({
     service_name: String(r.service_name || '').trim(),
     active: toBool_(r.active),
     created_at: String(r.created_at || '').trim()
   })).sort((a, b) => a.service_name.localeCompare(b.service_name));
+}
+
+function listConsumers_() {
+  return getRowsAsObjects_(SHEETS.CONSUMERS).map((r) => ({
+    consumer_name: String(r.consumer_name || '').trim(),
+    active: toBool_(r.active),
+    created_at: String(r.created_at || '').trim()
+  })).sort((a, b) => a.consumer_name.localeCompare(b.consumer_name));
+}
+
+function listServices_() {
+  return listProviders_();
 }
 
 function listMovements_() {
@@ -852,13 +947,34 @@ function ensureDefaultUsers_() {
 }
 
 function ensureDefaultProviders_() {
-  const providers = listServices_();
+  const providers = listProviders_();
   const key = String(CONFIG.DEFAULT_PROVIDER || '').toUpperCase();
   if (!key) return;
   const exists = providers.some((s) => String(s.service_name || '').toUpperCase() === key);
   if (exists) return;
   const ws = getSheet_(SHEETS.SERVICES.name, SHEETS.SERVICES.headers);
   ws.appendRow([key, true, new Date().toISOString()]);
+}
+
+function ensureDefaultConsumers_() {
+  const consumers = listConsumers_();
+  if (consumers.length > 0) return;
+
+  const providers = listProviders_();
+  const ws = getSheet_(SHEETS.CONSUMERS.name, SHEETS.CONSUMERS.headers);
+  const nowIso = new Date().toISOString();
+  if (providers.length) {
+    const values = providers.map((p) => [String(p.service_name || '').toUpperCase(), true, nowIso]);
+    ws.getRange(2, 1, values.length, SHEETS.CONSUMERS.headers.length).setValues(values);
+    return;
+  }
+  ws.appendRow(['DEPENDENCIA GENERAL', true, nowIso]);
+}
+
+function requireMasterAdmin_(session) {
+  if (!session || String(session.username || '').toLowerCase() !== 'user') {
+    throw new Error('Solo el administrador principal puede acceder a esta configuracion.');
+  }
 }
 
 function getPepper_() {
