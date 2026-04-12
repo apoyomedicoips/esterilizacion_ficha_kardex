@@ -812,23 +812,33 @@ function roleName(role){
 }
 
 function render(){
-  if(!state.token){ renderLogin(); return; }
-  renderShell();
-  if(state.currentView==='dashboard') renderDashboard();
-  if(state.currentView==='closure') renderClosure();
-  if(state.currentView==='movements') renderMovements();
-  if(state.currentView==='tracking') renderTracking();
-  if(state.currentView==='estimation') renderEstimation();
-  if(state.currentView==='laundry') renderLaundry();
-  if(state.currentView==='laundryCatalogs') renderLaundryCatalogs();
-  if(state.currentView==='edit') renderEditMovements();
-  if(state.currentView==='items') renderItems();
-  if(state.currentView==='services') renderServices();
-  if(state.currentView==='consumers') renderConsumers();
-  if(state.currentView==='profile') renderProfile();
-  if(state.currentView==='manual') renderManual();
-  if(state.currentView==='config') renderConfig();
-  if(state.currentView==='audit') renderAudit();
+  try{
+    if(!state.token){ renderLogin(); return; }
+    renderShell();
+    if(state.currentView==='dashboard') renderDashboard();
+    if(state.currentView==='closure') renderClosure();
+    if(state.currentView==='movements') renderMovements();
+    if(state.currentView==='tracking') renderTracking();
+    if(state.currentView==='estimation') renderEstimation();
+    if(state.currentView==='laundry') renderLaundry();
+    if(state.currentView==='laundryCatalogs') renderLaundryCatalogs();
+    if(state.currentView==='edit') renderEditMovements();
+    if(state.currentView==='items') renderItems();
+    if(state.currentView==='services') renderServices();
+    if(state.currentView==='consumers') renderConsumers();
+    if(state.currentView==='profile') renderProfile();
+    if(state.currentView==='manual') renderManual();
+    if(state.currentView==='config') renderConfig();
+    if(state.currentView==='audit') renderAudit();
+  }catch(e){
+    console.error('Render error', e);
+    localStorage.removeItem('kardex_token');
+    state.token='';
+    state.user=null;
+    state.bootstrap=null;
+    renderLogin();
+    showMsg('Se recupero la aplicacion tras un error de pantalla. Inicie sesion de nuevo.');
+  }
 }
 
 function renderLogin(){
@@ -3877,11 +3887,19 @@ function readFileAsEvidence(file){
 (async function init(){
   if(!state.token){ renderLogin(); return; }
   try{
-    await loadBootstrap();
+    await Promise.race([
+      loadBootstrap(),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('Bootstrap timeout')), 9000))
+    ]);
+    if(!state.user || !state.user.username){
+      throw new Error('Sesion invalida');
+    }
     render();
   }catch(_e){
     localStorage.removeItem('kardex_token');
     state.token='';
+    state.user=null;
+    state.bootstrap=null;
     renderLogin();
   }
 })();
