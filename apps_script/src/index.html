@@ -619,9 +619,71 @@
       .movement-left { max-height: none; }
       main { padding: 12px; }
     }
+
+    /* Header month badge */
+    .header-month-badge {
+      background: rgba(255,255,255,0.18);
+      border: 1px solid rgba(255,255,255,0.4);
+      border-radius: 999px;
+      font-size: 0.88rem;
+      font-weight: 700;
+      padding: 6px 12px;
+      color: #fff;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .header-month-badge span { opacity: 0.75; font-size: 0.78rem; font-weight: 400; }
+    .header-month-input {
+      background: transparent;
+      border: none;
+      color: #fff;
+      font-size: 0.88rem;
+      font-weight: 700;
+      cursor: pointer;
+      outline: none;
+      width: auto;
+      padding: 0;
+      margin: 0;
+      font-family: inherit;
+    }
+    .header-month-input::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+
+    /* Chart notes */
+    .chart-note {
+      margin: 4px 0 0;
+      font-size: 0.75rem;
+      color: #6e8a91;
+      font-style: italic;
+      line-height: 1.3;
+    }
+
+    /* Global tooltip for item panel */
+    #globalItemTooltip {
+      position: fixed;
+      background: #0a3f4a;
+      color: #fff;
+      padding: 7px 11px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      z-index: 9999;
+      pointer-events: none;
+      display: none;
+      max-width: 240px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+      line-height: 1.4;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+  <script>
+    // Register datalabels plugin globally for Chart.js
+    if(typeof Chart !== 'undefined' && typeof ChartDataLabels !== 'undefined'){
+      Chart.register(ChartDataLabels);
+    }
+  </script>
 </head>
 <body>
   <header class="top">
@@ -630,7 +692,13 @@
         <h1 class="title">Kardex de Esterilizacion</h1>
         <p class="subtitle">Registro diario de insumos para enfermeria</p>
       </div>
-      <div id="userLabel" class="user-pill"></div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <div id="headerMonthBadge" class="header-month-badge hidden">
+          <span>Mes activo:</span>
+          <input type="month" id="headerMonthInput" class="header-month-input"/>
+        </div>
+        <div id="userLabel" class="user-pill"></div>
+      </div>
     </div>
     <nav id="menu" class="menu hidden"></nav>
   </header>
@@ -655,11 +723,14 @@ const state = {
   cutoffDay: Number(localStorage.getItem('kardex_cutoff_day') || 0),
   currentView: 'dashboard',
   movementType: 'OUT',
-  charts: [],
+  chartInstances: {},
   dashboardTableKey: '',
   closureRaw: null,
   closureMonth: '',
   closureCache: {},
+  trackingMonth: localStorage.getItem('kardex_track_month') || '',
+  trackingRaw: null,
+  trackingCache: {},
   semaforo: {
     rojo: Number(localStorage.getItem('kardex_sem_rojo') || 50),
     amarillo: Number(localStorage.getItem('kardex_sem_amarillo') || 150)
@@ -674,8 +745,9 @@ const VIEW_LABELS = {
   dashboard: 'Tablero',
   closure: 'Cierre mensual',
   movements: 'Registrar movimiento',
+  tracking: 'Seguimiento de carga',
   items: 'Catalogo de items',
-  services: 'Catalogo de servicios',
+  services: 'Catalogo de proveedores',
   audit: 'Auditoria'
 };
 
@@ -719,6 +791,7 @@ function render(){
   if(state.currentView==='dashboard') renderDashboard();
   if(state.currentView==='closure') renderClosure();
   if(state.currentView==='movements') renderMovements();
+  if(state.currentView==='tracking') renderTracking();
   if(state.currentView==='items') renderItems();
   if(state.currentView==='services') renderServices();
   if(state.currentView==='audit') renderAudit();
@@ -785,10 +858,12 @@ function renderShell(){
 
   addMenuBtn(menu,'Tablero','dashboard',()=>{state.currentView='dashboard';render();});
   addMenuBtn(menu,'Cierre mensual','closure',()=>{state.currentView='closure';render();});
+  addMenuBtn(menu,'Seguimiento','tracking',()=>{state.currentView='tracking';render();});
   if(canWrite) addMenuBtn(menu,'Registrar','movements',()=>{state.currentView='movements';render();});
+  initHeaderMonthInput();
   if(isAdmin){
     addMenuBtn(menu,'Items','items',()=>{state.currentView='items';render();});
-    addMenuBtn(menu,'Servicios','services',()=>{state.currentView='services';render();});
+    addMenuBtn(menu,'Proveedores','services',()=>{state.currentView='services';render();});
     addMenuBtn(menu,'Auditoria','audit',()=>{state.currentView='audit';render();});
     addMenuBtn(menu,'Inicializar','init',async()=>{
       try{
@@ -842,14 +917,6 @@ async function renderDashboard(){
         <button id="loadBtn">Actualizar tablero</button>
       </div>
 
-      <div class="select-box">
-        <p class="select-title">Filtro inteligente por seleccion de area (lasso)</p>
-        <p class="help" style="margin-bottom:8px">Dibuje una forma libre para filtrar los indicadores a un grupo de items.</p>
-        <div class="btn-row" style="margin-bottom:8px">
-          <button id="clearSelection" style="width:auto;background:#5f7581">Quitar filtro lasso</button>
-        </div>
-        <div class="chart-wrap" style="height:260px"><div id="lassoPlot" style="width:100%;height:100%"></div></div>
-      </div>
 
       <div class="item-sheet-card">
         <div class="item-sheet-head">
@@ -859,11 +926,13 @@ async function renderDashboard(){
         <div id="sheetKpis" class="item-sheet-kpis"></div>
         <div class="analytics-grid">
           <div class="chart-card">
-            <p class="chart-title">Evolucion diaria del stock del item</p>
+            <p class="chart-title">Evolucion diaria del stock</p>
+            <p class="chart-note">Saldo acumulado dia a dia del item seleccionado en el panel. Eje X: dia del mes | Eje Y: unidades en stock.</p>
             <div class="chart-wrap"><canvas id="chartItemStock"></canvas></div>
           </div>
           <div class="chart-card">
-            <p class="chart-title">Entradas vs salidas diarias del item</p>
+            <p class="chart-title">Entradas y salidas diarias</p>
+            <p class="chart-note">Movimientos del item por dia. Verde = entradas (suman stock), rojo = salidas (restan stock). Eje X: dia | Eje Y: unidades.</p>
             <div class="chart-wrap"><canvas id="chartItemFlow"></canvas></div>
           </div>
         </div>
@@ -871,19 +940,23 @@ async function renderDashboard(){
 
       <div class="analytics-grid" id="analyticsGrid">
         <div class="chart-card">
-          <p class="chart-title">Consumo acumulado por servicio (Top 10)</p>
+          <p class="chart-title">Consumo por area / proveedor (Top 10)</p>
+          <p class="chart-note">Salidas acumuladas por area durante el periodo. Eje X: area | Eje Y: unidades salidas. Las etiquetas muestran el total por barra.</p>
           <div class="chart-wrap"><canvas id="chartService"></canvas></div>
         </div>
         <div class="chart-card">
-          <p class="chart-title">Top items: inicial vs entradas vs salidas vs saldo</p>
+          <p class="chart-title">Comparativo por item: stock inicial, entradas, salidas y saldo</p>
+          <p class="chart-note">Top 12 items con mas movimiento. Azul=inicial, verde=entradas, rojo=salidas, violeta=saldo al corte. Eje X: codigo | Eje Y: unidades.</p>
           <div class="chart-wrap"><canvas id="chartCoverage"></canvas></div>
         </div>
         <div class="chart-card">
-          <p class="chart-title">Stock total diario del grupo filtrado</p>
+          <p class="chart-title">Stock total diario (suma de todos los items)</p>
+          <p class="chart-note">Evolucion del inventario global dia a dia. Considera todos los items activos. Eje X: dia del mes | Eje Y: unidades totales en stock.</p>
           <div class="chart-wrap"><canvas id="chartSeries"></canvas></div>
         </div>
         <div class="chart-card">
-          <p class="chart-title">Flujo acumulado (entradas vs salidas)</p>
+          <p class="chart-title">Flujo acumulado: entradas vs salidas</p>
+          <p class="chart-note">Verde = entradas acumuladas, rojo = salidas acumuladas desde inicio del mes hasta la fecha de corte. Eje X: dia | Eje Y: unidades acumuladas.</p>
           <div class="chart-wrap"><canvas id="chartFlow"></canvas></div>
         </div>
       </div>
@@ -917,7 +990,7 @@ async function renderDashboard(){
       </div>
 
       <div class="service-box">
-        <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">Semaforo por area / servicio</h3>
+        <h3 style="margin:0 0 8px;color:#184d59;font-size:1rem">Semaforo por area / proveedor</h3>
         <p class="help" style="margin-bottom:8px">Prioriza areas con mayor consumo (salidas) durante el mes seleccionado.</p>
         <div class="semaforo-head">
           <div class="field">
@@ -981,18 +1054,10 @@ async function renderDashboard(){
     localStorage.setItem('kardex_area_rojo','280');
     if(state.dashboardRaw) renderDashboardPanels();
   };
-  document.getElementById('clearSelection').onclick=()=>{
-    state.selectedItems=null;
-    if(state.dashboardRaw){
-      renderLassoSelector(state.dashboardRaw);
-      renderDashboardPanels();
-    }
-  };
   document.getElementById('cutoffDay').onchange=(e)=>{
     state.cutoffDay = Number(e.target.value || 0);
     localStorage.setItem('kardex_cutoff_day', String(state.cutoffDay || 0));
     if(state.dashboardRaw){
-      renderLassoSelector(state.dashboardRaw);
       renderDashboardPanels();
     }
   };
@@ -1043,6 +1108,415 @@ async function renderClosure(){
   document.getElementById('exportExcelBtn').onclick=()=>{ exportClosureExcel(); };
   document.getElementById('exportWordBtn').onclick=()=>{ exportClosureWord(); };
   await loadClosureData(false);
+}
+
+async function renderTracking(){
+  const app=document.getElementById('app');
+  const monthDefault=state.trackingMonth||state.dashboardMonth||new Date().toISOString().slice(0,7);
+  app.innerHTML=`
+  <section class="card">
+    <h2>${VIEW_LABELS.tracking}</h2>
+    <p class="help">Control de entradas y salidas registradas por dia y por insumo. Permite verificar el impacto de las cargas y la continuidad entre meses.</p>
+    <div class="inline" style="margin-bottom:12px">
+      <div>
+        <label>Mes de consulta</label>
+        <input id="t_month" type="month" value="${monthDefault}"/>
+      </div>
+      <button id="t_loadBtn">Cargar datos</button>
+    </div>
+    <div id="trackingHeader" class="note" style="margin-bottom:8px"></div>
+    <div id="trackingVerif" class="note" style="margin-bottom:8px;display:none"></div>
+    <div id="trackingControls" class="btn-row" style="margin-bottom:8px;display:none">
+      <button id="t_showBoth" style="background:#0b5f6d;width:auto">Entradas y salidas</button>
+      <button id="t_showIn" style="background:#0a7a55;width:auto">Solo entradas</button>
+      <button id="t_showOut" style="background:#a23a1d;width:auto">Solo salidas</button>
+      <button id="t_verifBtn" style="background:#4f5f6b;width:auto">Verificar continuidad con mes anterior</button>
+    </div>
+    <div id="trackingPedidoControls" class="inline" style="margin:8px 0;display:none">
+      <div>
+        <label>Bloque 10 dias mes actual</label>
+        <select id="t_currBlock">
+          <option value="b1">Dias 1-10</option>
+          <option value="b2">Dias 11-20</option>
+          <option value="b3">Dias 21-fin de mes</option>
+        </select>
+      </div>
+      <div>
+        <label>Comparar con bloque mes anterior</label>
+        <select id="t_prevBlock">
+          <option value="auto">Automatico (mejor bloque disponible)</option>
+          <option value="b1">Dias 1-10</option>
+          <option value="b2">Dias 11-20</option>
+          <option value="b3">Dias 21-fin de mes</option>
+        </select>
+      </div>
+      <div>
+        <label>Stock actual al dia</label>
+        <select id="t_stockDay"></select>
+      </div>
+    </div>
+    <div id="trackingPedidoNote" class="note" style="margin-bottom:8px;display:none"></div>
+    <div id="trackingTable" class="table" style="overflow:auto;max-height:72vh"></div>
+    <div id="trackingVerifTable" class="table" style="margin-top:10px;display:none"></div>
+    <div id="trackingPedidoTable" class="table" style="margin-top:10px;display:none"></div>
+  </section>`;
+
+  let trackingMode='both';
+  let prevMonthRaw=null;
+
+  function renderTrackingTable(raw,mode){
+    const header=document.getElementById('trackingHeader');
+    const table=document.getElementById('trackingTable');
+    const controls=document.getElementById('trackingControls');
+    if(!raw||!raw.rows){ if(header) header.textContent='Sin datos para este mes.'; return; }
+    const daysInMonth=Number(raw.days_in_month||0);
+    const days=[]; for(let d=1;d<=daysInMonth;d++) days.push(d);
+    const totalIn=raw.rows.reduce((s,r)=>(r.in_by_day||[]).reduce((a,v)=>a+Number(v||0),s),0);
+    const totalOut=raw.rows.reduce((s,r)=>(r.out_by_day||[]).reduce((a,v)=>a+Number(v||0),s),0);
+    header.innerHTML=`<strong>Mes:</strong> ${esc(raw.month)} &nbsp;|&nbsp; <strong>Movimientos:</strong> ${fmt(raw.movement_count)} &nbsp;|&nbsp; <strong style="color:#0a7a55">Total entradas: ${fmt(totalIn)}</strong> &nbsp;|&nbsp; <strong style="color:#a23a1d">Total salidas: ${fmt(totalOut)}</strong>`;
+    controls.style.display='';
+
+    const dayHeaders=days.map(d=>{
+      const hasD=raw.rows.some(r=>Number((r.in_by_day&&r.in_by_day[d-1])||0)>0||Number((r.out_by_day&&r.out_by_day[d-1])||0)>0);
+      const hs=hasD?'background:#e8f5f7;font-weight:800':'';
+      if(mode==='both') return `<th colspan="2" style="${hs};text-align:center" title="Dia ${d}">D${d}<div style="font-size:0.72rem;font-weight:400;opacity:0.65">E/S</div></th>`;
+      if(mode==='in') return `<th style="${hs};text-align:center" title="Dia ${d}">D${d}<div style="font-size:0.72rem;font-weight:400;opacity:0.65">E</div></th>`;
+      return `<th style="${hs};text-align:center" title="Dia ${d}">D${d}<div style="font-size:0.72rem;font-weight:400;opacity:0.65">S</div></th>`;
+    }).join('');
+
+    const rows=raw.rows.map(r=>{
+      const totIn=(r.in_by_day||[]).reduce((a,v)=>a+Number(v||0),0);
+      const totOut=(r.out_by_day||[]).reduce((a,v)=>a+Number(v||0),0);
+      const saldoFin=Number(r.stock_inicial_mes||0)+totIn-totOut;
+      const cells=days.map(d=>{
+        const iv=Number((r.in_by_day&&r.in_by_day[d-1])||0);
+        const ov=Number((r.out_by_day&&r.out_by_day[d-1])||0);
+        if(mode==='both'){
+          const ic=iv>0?`<td style="background:#f0fbf4;color:#0a7a55;font-weight:700;text-align:center;padding:4px 5px">${iv}</td>`:`<td style="text-align:center;color:#ddd;padding:4px 3px">-</td>`;
+          const oc=ov>0?`<td style="background:#fff4f0;color:#a23a1d;font-weight:700;text-align:center;padding:4px 5px">${ov}</td>`:`<td style="text-align:center;color:#ddd;padding:4px 3px">-</td>`;
+          return ic+oc;
+        }
+        if(mode==='in') return iv>0?`<td style="background:#f0fbf4;color:#0a7a55;font-weight:700;text-align:center">${iv}</td>`:`<td style="text-align:center;color:#ddd">-</td>`;
+        return ov>0?`<td style="background:#fff4f0;color:#a23a1d;font-weight:700;text-align:center">${ov}</td>`:`<td style="text-align:center;color:#ddd">-</td>`;
+      }).join('');
+      return `<tr>
+        <td style="position:sticky;left:0;z-index:2;background:#ecf6f8;font-weight:800;white-space:nowrap" title="${escAttr(r.item_name)}">${esc(r.item_code)}</td>
+        <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.84rem" title="${escAttr(r.item_name)}">${esc(r.item_name)}</td>
+        <td style="text-align:right;font-weight:700">${fmt(r.stock_inicial_mes)}</td>
+        ${cells}
+        <td style="text-align:right;background:#e8f8ef;color:#0a7a55;font-weight:800">${totIn>0?fmt(totIn):'-'}</td>
+        <td style="text-align:right;background:#fff1ed;color:#a23a1d;font-weight:800">${totOut>0?fmt(totOut):'-'}</td>
+        <td style="text-align:right;font-weight:800;color:#0f4d59">${fmt(saldoFin)}</td>
+      </tr>`;
+    }).join('');
+
+    table.innerHTML=`<table>
+      <thead><tr>
+        <th style="position:sticky;left:0;z-index:3;background:#ecf6f8">Codigo</th>
+        <th>Descripcion</th>
+        <th>Saldo Inicio</th>
+        ${dayHeaders}
+        <th style="background:#d8f4e5;color:#0a7a55">Total E</th>
+        <th style="background:#fde8e0;color:#a23a1d">Total S</th>
+        <th>Saldo Final</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  }
+
+  function getTenDayBlocks(daysInMonth){
+    const dmax=Math.max(1, Number(daysInMonth||0));
+    return [
+      { key:'b1', label:'Dias 1-10', start:1, end:Math.min(10,dmax) },
+      { key:'b2', label:'Dias 11-20', start:Math.min(11,dmax), end:Math.min(20,dmax) },
+      { key:'b3', label:'Dias 21-fin de mes', start:Math.min(21,dmax), end:dmax }
+    ];
+  }
+
+  function sumRange(arr,start,end){
+    if(!arr||!arr.length) return 0;
+    let total=0;
+    for(let d=start; d<=end; d++){
+      total += Number(arr[d-1]||0);
+    }
+    return total;
+  }
+
+  function getStockAtDay(row,day){
+    const inByDay=row.in_by_day||[];
+    const outByDay=row.out_by_day||[];
+    let inTotal=0, outTotal=0;
+    for(let i=0;i<day;i++){
+      inTotal += Number(inByDay[i]||0);
+      outTotal += Number(outByDay[i]||0);
+    }
+    return Number(row.stock_inicial_mes||0) + inTotal - outTotal;
+  }
+
+  function renderTrackingPedido(raw){
+    const controls=document.getElementById('trackingPedidoControls');
+    const note=document.getElementById('trackingPedidoNote');
+    const table=document.getElementById('trackingPedidoTable');
+    const daySel=document.getElementById('t_stockDay');
+    const currSel=document.getElementById('t_currBlock');
+    const prevSel=document.getElementById('t_prevBlock');
+    if(!controls||!note||!table||!daySel||!currSel||!prevSel) return;
+    if(!raw||!raw.rows||!raw.rows.length){
+      controls.style.display='none';
+      note.style.display='none';
+      table.style.display='none';
+      return;
+    }
+
+    controls.style.display='';
+    table.style.display='';
+    note.style.display='';
+
+    const daysInMonth=Number(raw.days_in_month||0);
+    const today=new Date();
+    const curMonth=today.toISOString().slice(0,7);
+    const isCurrentMonth=String(raw.month||'')===curMonth;
+    const defaultDay=isCurrentMonth ? Math.min(daysInMonth, Number(today.getDate()||daysInMonth)) : daysInMonth;
+    if(!daySel.options.length || Number(daySel.options.length)!==daysInMonth){
+      daySel.innerHTML=Array.from({length:daysInMonth},(_,i)=>{
+        const d=i+1;
+        return `<option value="${d}">Dia ${d}</option>`;
+      }).join('');
+      daySel.value=String(defaultDay||daysInMonth||1);
+    }
+
+    const blocksCurrent=getTenDayBlocks(daysInMonth);
+    const currBlock=blocksCurrent.find(b=>b.key===currSel.value) || blocksCurrent[0];
+    const stockDay=Math.max(1, Math.min(daysInMonth, Number(daySel.value||daysInMonth)));
+
+    const prevRowsByCode={};
+    const prevDays=Number((prevMonthRaw && prevMonthRaw.days_in_month) || 0);
+    if(prevMonthRaw && prevMonthRaw.rows){
+      prevMonthRaw.rows.forEach(r=>{ prevRowsByCode[String(r.item_code||'')]=r; });
+    }
+    const prevBlocks=getTenDayBlocks(prevDays||30);
+
+    const lines=raw.rows.map(r=>{
+      const code=String(r.item_code||'');
+      const prev=prevRowsByCode[code];
+      const curr10=sumRange(r.out_by_day||[], currBlock.start, currBlock.end);
+
+      let prev10=0;
+      let prevUsedLabel='Sin datos previos';
+      if(prev){
+        if(prevSel.value==='auto'){
+          let best={qty:0,label:'Sin datos previos'};
+          prevBlocks.forEach(b=>{
+            if(b.start>b.end) return;
+            const q=sumRange(prev.out_by_day||[], b.start, b.end);
+            if(q>best.qty){
+              best={qty:q,label:b.label};
+            }
+          });
+          prev10=best.qty;
+          prevUsedLabel=best.label;
+        }else{
+          const pb=prevBlocks.find(b=>b.key===prevSel.value) || prevBlocks[0];
+          prev10=sumRange(prev.out_by_day||[], pb.start, pb.end);
+          prevUsedLabel=pb.label;
+        }
+      }
+
+      const consumo10=Math.max(prev10,curr10);
+      const plus30=consumo10*0.3;
+      const suma=consumo10+plus30;
+      const stockActual=getStockAtDay(r,stockDay);
+      const pedido=Math.max(0, Math.ceil(suma-stockActual));
+      return {
+        code: code,
+        name: String(r.item_name||''),
+        prev10: prev10,
+        curr10: curr10,
+        consumo10: consumo10,
+        plus30: plus30,
+        suma: suma,
+        stockActual: stockActual,
+        pedido: pedido,
+        prevUsedLabel: prevUsedLabel
+      };
+    });
+
+    lines.sort((a,b)=>b.pedido-a.pedido||b.consumo10-a.consumo10||String(a.code).localeCompare(String(b.code)));
+    const totalPedido=lines.reduce((a,r)=>a+Number(r.pedido||0),0);
+    const totalConsumo=lines.reduce((a,r)=>a+Number(r.consumo10||0),0);
+    note.innerHTML=`<strong>Calculo de pedido:</strong> consumo 10 dias = MAX(consumo bloque actual, consumo bloque mes anterior). Se agrega 30% de seguridad. <strong>Stock actual</strong> calculado al dia ${stockDay}. Pedido sugerido = MAX(0, Suma - Stock actual). Total pedido sugerido: <strong>${fmt(totalPedido)}</strong> unidades.`;
+
+    table.innerHTML=`<table>
+      <thead><tr>
+        <th>ITEM</th>
+        <th>CONSUMO 10 DIAS MES ANTERIOR</th>
+        <th>CONSUMO 10 DIAS MES ACTUAL</th>
+        <th>CONSUMO 10 DIAS</th>
+        <th>30%</th>
+        <th>Suma</th>
+        <th>Stock actual</th>
+        <th>Pedido</th>
+      </tr></thead>
+      <tbody>
+        ${lines.map(r=>`<tr>
+          <td title="${escAttr(r.name)}"><strong>${esc(r.code)}</strong></td>
+          <td title="${escAttr(r.prevUsedLabel)}">${fmt(Math.round(r.prev10))}</td>
+          <td>${fmt(Math.round(r.curr10))}</td>
+          <td><strong>${fmt(Math.round(r.consumo10))}</strong></td>
+          <td>${fmt(Math.round(r.plus30))}</td>
+          <td>${fmt(Math.round(r.suma))}</td>
+          <td>${fmt(Math.round(r.stockActual))}</td>
+          <td style="${r.pedido>0?'color:#a23a1d;font-weight:800':'color:#0a7a55;font-weight:700'}">${fmt(r.pedido)}</td>
+        </tr>`).join('')}
+        <tr style="background:#eef5f7;font-weight:800">
+          <td>TOTAL</td>
+          <td>-</td>
+          <td>-</td>
+          <td>${fmt(Math.round(totalConsumo))}</td>
+          <td>-</td>
+          <td>-</td>
+          <td>-</td>
+          <td>${fmt(totalPedido)}</td>
+        </tr>
+      </tbody>
+    </table>`;
+  }
+
+  async function loadTrackingData(force){
+    const mi=document.getElementById('t_month');
+    if(!mi) return;
+    const selectedMonth=mi.value;
+    state.trackingMonth=selectedMonth;
+    localStorage.setItem('kardex_track_month',selectedMonth);
+    updateHeaderMonth(selectedMonth);
+    if(!force&&state.trackingCache[selectedMonth]){
+      state.trackingRaw=state.trackingCache[selectedMonth];
+      renderTrackingTable(state.trackingRaw,trackingMode);
+      await loadTrackingPrevMonth();
+      renderTrackingPedido(state.trackingRaw);
+      return;
+    }
+    try{
+      const out=await safeServer('getMonthlyClosure',{token:state.token,month:selectedMonth});
+      if(out&&out.month){ mi.value=out.month; state.trackingMonth=out.month; localStorage.setItem('kardex_track_month',out.month); }
+      state.trackingRaw=out;
+      if(state.trackingMonth) state.trackingCache[state.trackingMonth]=out;
+      renderTrackingTable(state.trackingRaw,trackingMode);
+      await loadTrackingPrevMonth();
+      renderTrackingPedido(state.trackingRaw);
+    }catch(e){ showMsg(e); }
+  }
+
+  async function loadTrackingPrevMonth(){
+    prevMonthRaw=null;
+    if(!state.trackingRaw||!state.trackingRaw.month) return;
+    const [y,m]=String(state.trackingRaw.month).split('-').map(Number);
+    if(!y||!m) return;
+    const prevD=new Date(y,m-2,1);
+    const prevMonth=prevD.getFullYear()+'-'+String(prevD.getMonth()+1).padStart(2,'0');
+    try{
+      prevMonthRaw=state.trackingCache[prevMonth]||await safeServer('getMonthlyClosure',{token:state.token,month:prevMonth});
+      if(!state.trackingCache[prevMonth]) state.trackingCache[prevMonth]=prevMonthRaw;
+    }catch(_e){
+      prevMonthRaw=null;
+    }
+  }
+
+  document.getElementById('t_loadBtn').onclick=()=>loadTrackingData(true);
+  document.getElementById('t_showBoth').onclick=()=>{ trackingMode='both'; renderTrackingTable(state.trackingRaw,'both'); };
+  document.getElementById('t_showIn').onclick=()=>{ trackingMode='in'; renderTrackingTable(state.trackingRaw,'in'); };
+  document.getElementById('t_showOut').onclick=()=>{ trackingMode='out'; renderTrackingTable(state.trackingRaw,'out'); };
+  document.getElementById('t_currBlock').onchange=()=>renderTrackingPedido(state.trackingRaw);
+  document.getElementById('t_prevBlock').onchange=()=>renderTrackingPedido(state.trackingRaw);
+  document.getElementById('t_stockDay').onchange=()=>renderTrackingPedido(state.trackingRaw);
+
+  document.getElementById('t_verifBtn').onclick=async()=>{
+    const verif=document.getElementById('trackingVerifTable');
+    const verifNote=document.getElementById('trackingVerif');
+    if(!state.trackingRaw||!state.trackingRaw.month){ showMsg('Cargue primero los datos del mes.'); return; }
+    const currentMonth=state.trackingRaw.month;
+    const [y,m]=currentMonth.split('-').map(Number);
+    const prevD=new Date(y,m-2,1);
+    const prevMonth=prevD.getFullYear()+'-'+String(prevD.getMonth()+1).padStart(2,'0');
+    try{
+      const prevRaw=state.trackingCache[prevMonth]||await safeServer('getMonthlyClosure',{token:state.token,month:prevMonth});
+      if(!state.trackingCache[prevMonth]) state.trackingCache[prevMonth]=prevRaw;
+      if(!prevRaw||!prevRaw.rows){ showMsg('No hay datos del mes anterior ('+prevMonth+').'); return; }
+      const prevEnd={};
+      prevRaw.rows.forEach(r=>{
+        const tIn=(r.in_by_day||[]).reduce((a,v)=>a+Number(v||0),0);
+        const tOut=(r.out_by_day||[]).reduce((a,v)=>a+Number(v||0),0);
+        prevEnd[r.item_code]=Number(r.stock_inicial_mes||0)+tIn-tOut;
+      });
+      const vrows=state.trackingRaw.rows.map(r=>{
+        const prev=prevEnd[r.item_code];
+        const curr=Number(r.stock_inicial_mes||0);
+        const match=prev!==undefined&&prev===curr;
+        const diff=prev!==undefined?curr-prev:null;
+        return {code:r.item_code,name:r.item_name,prev,curr,match,diff};
+      });
+      const allOk=vrows.every(r=>r.match);
+      const badCount=vrows.filter(r=>!r.match).length;
+      verifNote.innerHTML=allOk
+        ?`<strong style="color:#0a7a55">&#10003; Verificacion correcta:</strong> El saldo inicial de <strong>${esc(currentMonth)}</strong> coincide con el saldo final de <strong>${esc(prevMonth)}</strong> en todos los items.`
+        :`<strong style="color:#a23a1d">&#9888; Atencion:</strong> ${badCount} item(s) presentan diferencia entre el saldo final de <strong>${esc(prevMonth)}</strong> y el saldo inicial de <strong>${esc(currentMonth)}</strong>. Verifique si se modifico el stock inicial de algun item.`;
+      verifNote.style.display='';
+      verif.style.display='';
+      verif.innerHTML=`<table>
+        <thead><tr>
+          <th>Codigo</th><th>Descripcion</th>
+          <th>Saldo Final ${esc(prevMonth)}</th>
+          <th>Saldo Inicial ${esc(currentMonth)}</th>
+          <th>Diferencia</th><th>Estado</th>
+        </tr></thead>
+        <tbody>${vrows.map(r=>`<tr>
+          <td><strong>${esc(r.code)}</strong></td>
+          <td>${esc(r.name)}</td>
+          <td style="text-align:right">${r.prev!==undefined?fmt(r.prev):'-'}</td>
+          <td style="text-align:right">${fmt(r.curr)}</td>
+          <td style="text-align:right;${r.diff!==null&&r.diff!==0?'color:#a23a1d;font-weight:700':'color:#0a7a55'}">${r.diff!==null?(r.diff===0?'&#10003; 0':fmt(r.diff)):'N/A'}</td>
+          <td>${r.match?'<span class="badge green">OK</span>':(r.prev===undefined?'<span class="badge yellow">Sin datos prev.</span>':'<span class="badge red">Diferencia</span>')}</td>
+        </tr>`).join('')}</tbody>
+      </table>`;
+    }catch(e){ showMsg(e); }
+  };
+
+  await loadTrackingData(false);
+}
+
+function updateHeaderMonth(month){
+  const badge=document.getElementById('headerMonthBadge');
+  const input=document.getElementById('headerMonthInput');
+  if(!badge||!input) return;
+  if(!month){ badge.classList.add('hidden'); return; }
+  badge.classList.remove('hidden');
+  if(input.value!==month) input.value=month;
+}
+
+function initHeaderMonthInput(){
+  const input=document.getElementById('headerMonthInput');
+  if(!input||input._bound) return;
+  input._bound=true;
+  input.onchange=()=>{
+    const m=input.value;
+    if(!m) return;
+    if(state.currentView==='dashboard'){
+      const mi=document.getElementById('month');
+      if(mi) mi.value=m;
+      state.dashboardMonth=m;
+      localStorage.setItem('kardex_dash_month',m);
+      loadDashboard(true);
+    } else if(state.currentView==='tracking'){
+      const mi=document.getElementById('t_month');
+      if(mi) mi.value=m;
+      state.trackingMonth=m;
+      localStorage.setItem('kardex_track_month',m);
+    } else if(state.currentView==='closure'){
+      const mi=document.getElementById('c_month');
+      if(mi) mi.value=m;
+      loadClosureData(true);
+    }
+  };
 }
 
 function pad2(n){ return String(Number(n||0)).padStart(2,'0'); }
@@ -1422,52 +1896,13 @@ function buildCutoffModel(out){
   };
 }
 
-function renderLassoSelector(raw){
-  const container=document.getElementById('lassoPlot');
-  if(!container || typeof Plotly==='undefined' || !raw) return;
-  const model=buildCutoffModel(raw);
-  const rows=model.rows||[];
-  const x=rows.map(r=>Number(r.cutoff_balance||0));
-  const y=rows.map(r=>Number(r.cutoff_diff||0));
-  const labels=rows.map(r=>String(r.item_code));
-  const selected=state.selectedItems || new Set();
-  const colors=labels.map(l=>selected.has(l)?'#e66f51':'#1c89a0');
-
-  const trace={
-    x:x, y:y, text:labels, mode:'markers+text', type:'scatter',
-    textposition:'top center',
-    marker:{ size:10, color:colors, line:{color:'#ffffff', width:1} },
-    hovertemplate:'Item %{text}<br>Stock corte: %{x}<br>Variacion corte: %{y}<extra></extra>'
-  };
-  const layout={
-    margin:{l:45,r:15,t:10,b:40},
-    paper_bgcolor:'rgba(0,0,0,0)',
-    plot_bgcolor:'#ffffff',
-    dragmode:'lasso',
-    xaxis:{title:'Stock a fecha de corte'},
-    yaxis:{title:'Variacion al corte'}
-  };
-  Plotly.react(container,[trace],layout,{displayModeBar:true,responsive:true,modeBarButtonsToRemove:['autoScale2d','lasso2d','select2d'],displaylogo:false});
-  container.on('plotly_selected',(ev)=>{
-    if(!ev || !ev.points || ev.points.length===0){ return; }
-    const set=new Set(ev.points.map(p=>String(labels[p.pointIndex])));
-    state.selectedItems=set;
-    renderDashboardPanels();
-  });
-  container.on('plotly_deselect',()=>{
-    state.selectedItems=null;
-    renderDashboardPanels();
-  });
-}
 
 function destroyDashboardCharts(){
-  const ids=['chartService','chartCoverage','chartSeries','chartFlow','chartItemStock','chartItemFlow'];
-  ids.forEach(id=>{
-    const c=document.getElementById(id);
-    if(!c) return;
-    const ctx=c.getContext && c.getContext('2d');
-    if(!ctx) return;
-    ctx.clearRect(0,0,c.width||0,c.height||0);
+  ['chartService','chartCoverage','chartSeries','chartFlow','chartItemStock','chartItemFlow'].forEach(id=>{
+    if(state.chartInstances[id]){
+      try{ state.chartInstances[id].destroy(); }catch(_e){}
+      delete state.chartInstances[id];
+    }
   });
 }
 
@@ -1633,38 +2068,194 @@ function renderDashboardCharts(out, model){
   const days=(out.days||[]).map(d=>String(d));
   const itemData=getSelectedItemModel(out, model);
 
-  const serviceCtx=document.getElementById('chartService');
-  const coverageCtx=document.getElementById('chartCoverage');
-  const seriesCtx=document.getElementById('chartSeries');
-  const flowCtx=document.getElementById('chartFlow');
-  const itemStockCtx=document.getElementById('chartItemStock');
-  const itemFlowCtx=document.getElementById('chartItemFlow');
-  if(!serviceCtx||!coverageCtx||!seriesCtx||!flowCtx||!itemStockCtx||!itemFlowCtx) return;
-  drawBarChart(
-    serviceCtx,
-    a.serviceTop.map(r=>r.service_name),
-    a.serviceTop.map(r=>Number(r.out_qty||0)),
-    a.serviceTop.map((_,i)=>colorRamp(i+2)),
-    'Salidas por servicio'
-  );
-  drawGroupedBars(coverageCtx, a.topItems.map(r=>r.code), [
-    {color:'#2d8bba', values:a.topItems.map(r=>r.start)},
-    {color:'#2f9e70', values:a.topItems.map(r=>r.ins)},
-    {color:'#d9654b', values:a.topItems.map(r=>r.outs)},
-    {color:'#7c4dff', values:a.topItems.map(r=>r.end)}
-  ]);
-  drawLineChart(seriesCtx, days, [{color:'#0b5f6d', values:a.totalByDay}]);
-  drawLineChart(flowCtx, days, [
-    {color:'#2f9e70', values:(model && model.cumulativeIn) || []},
-    {color:'#d9654b', values:(model && model.cumulativeOut) || []}
-  ]);
+  const FONT_SM={size:10,family:"'Segoe UI',Tahoma,sans-serif"};
+  const FONT_MD={size:11,family:"'Segoe UI',Tahoma,sans-serif"};
+  const AXIS_CLR='#4a6670';
+  const TITLE_CLR='#174f5b';
+  const GRID_CLR='#e8f0f2';
+
+  function axisT(text){ return {display:true,text,color:TITLE_CLR,font:FONT_MD,padding:4}; }
+  function dlBar(){ return {
+    color:'#1f4f5b',font:{size:9,weight:'700'},anchor:'end',align:'top',
+    formatter:v=>v>0?fmt(v):'',
+    display:ctx=>Number(ctx.dataset.data[ctx.dataIndex]||0)>0
+  };}
+  function dlOff(){ return {display:false}; }
+
+  const svcEl=document.getElementById('chartService');
+  const covEl=document.getElementById('chartCoverage');
+  const serEl=document.getElementById('chartSeries');
+  const flEl=document.getElementById('chartFlow');
+  const isEl=document.getElementById('chartItemStock');
+  const ifEl=document.getElementById('chartItemFlow');
+  if(!svcEl||!covEl||!serEl||!flEl||!isEl||!ifEl) return;
+
+  // 1. Consumo por area/proveedor Top 10
+  state.chartInstances.chartService=new Chart(svcEl.getContext('2d'),{
+    type:'bar',
+    data:{
+      labels:a.serviceTop.map(r=>r.service_name),
+      datasets:[{
+        label:'Salidas acumuladas',
+        data:a.serviceTop.map(r=>Number(r.out_qty||0)),
+        backgroundColor:a.serviceTop.map((_,i)=>colorRamp(i+2)+'cc'),
+        borderColor:a.serviceTop.map((_,i)=>colorRamp(i+2)),
+        borderWidth:1,borderRadius:4
+      }]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{label:ctx=>`Salidas: ${fmt(ctx.parsed.y)} u.`}},
+        datalabels:dlBar()
+      },
+      scales:{
+        x:{title:axisT('Area / Proveedor'),ticks:{font:FONT_SM,color:AXIS_CLR,maxRotation:45}},
+        y:{title:axisT('Unidades salidas'),ticks:{font:FONT_SM,color:AXIS_CLR},beginAtZero:true,grid:{color:GRID_CLR}}
+      }
+    }
+  });
+
+  // 2. Top items comparativo (grouped bar)
+  state.chartInstances.chartCoverage=new Chart(covEl.getContext('2d'),{
+    type:'bar',
+    data:{
+      labels:a.topItems.map(r=>r.code),
+      datasets:[
+        {label:'Stock inicial',data:a.topItems.map(r=>r.start),backgroundColor:'#2d8bba88',borderColor:'#2d8bba',borderWidth:1,borderRadius:2},
+        {label:'Entradas',data:a.topItems.map(r=>r.ins),backgroundColor:'#2f9e7088',borderColor:'#2f9e70',borderWidth:1,borderRadius:2},
+        {label:'Salidas',data:a.topItems.map(r=>r.outs),backgroundColor:'#d9654b88',borderColor:'#d9654b',borderWidth:1,borderRadius:2},
+        {label:'Saldo al corte',data:a.topItems.map(r=>r.end),backgroundColor:'#7c4dff88',borderColor:'#7c4dff',borderWidth:1,borderRadius:2}
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{
+        legend:{position:'bottom',labels:{font:FONT_SM,color:AXIS_CLR,boxWidth:12}},
+        tooltip:{mode:'index'},
+        datalabels:dlOff()
+      },
+      scales:{
+        x:{title:axisT('Codigo de item'),ticks:{font:FONT_SM,color:AXIS_CLR}},
+        y:{title:axisT('Unidades'),ticks:{font:FONT_SM,color:AXIS_CLR},beginAtZero:true,grid:{color:GRID_CLR}}
+      }
+    }
+  });
+
+  // 3. Stock total diario (line)
+  state.chartInstances.chartSeries=new Chart(serEl.getContext('2d'),{
+    type:'line',
+    data:{
+      labels:days,
+      datasets:[{
+        label:'Stock total',
+        data:a.totalByDay,
+        borderColor:'#0b5f6d',backgroundColor:'rgba(11,95,109,0.09)',
+        borderWidth:2.5,pointRadius:2,pointHoverRadius:6,fill:true,tension:0.3
+      }]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{label:ctx=>`Stock total: ${fmt(ctx.parsed.y)} u.`}},
+        datalabels:dlOff()
+      },
+      scales:{
+        x:{title:axisT('Dia del mes'),ticks:{font:FONT_SM,color:AXIS_CLR,maxTicksLimit:16}},
+        y:{title:axisT('Unidades en stock'),ticks:{font:FONT_SM,color:AXIS_CLR},beginAtZero:false,grid:{color:GRID_CLR}}
+      }
+    }
+  });
+
+  // 4. Flujo acumulado entradas vs salidas
+  const cumIn=(model&&model.cumulativeIn)||[];
+  const cumOut=(model&&model.cumulativeOut)||[];
+  state.chartInstances.chartFlow=new Chart(flEl.getContext('2d'),{
+    type:'line',
+    data:{
+      labels:days,
+      datasets:[
+        {label:'Entradas acumuladas',data:cumIn,borderColor:'#2f9e70',backgroundColor:'rgba(47,158,112,0.08)',borderWidth:2,pointRadius:2,pointHoverRadius:5,fill:false,tension:0.3},
+        {label:'Salidas acumuladas',data:cumOut,borderColor:'#d9654b',backgroundColor:'rgba(217,101,75,0.08)',borderWidth:2,pointRadius:2,pointHoverRadius:5,fill:false,tension:0.3}
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{
+        legend:{position:'bottom',labels:{font:FONT_SM,color:AXIS_CLR,boxWidth:12}},
+        tooltip:{mode:'index',callbacks:{label:ctx=>`${ctx.dataset.label}: ${fmt(ctx.parsed.y)} u.`}},
+        datalabels:dlOff()
+      },
+      scales:{
+        x:{title:axisT('Dia del mes'),ticks:{font:FONT_SM,color:AXIS_CLR,maxTicksLimit:16}},
+        y:{title:axisT('Unidades acumuladas'),ticks:{font:FONT_SM,color:AXIS_CLR},beginAtZero:true,grid:{color:GRID_CLR}}
+      }
+    }
+  });
 
   if(itemData){
-    drawLineChart(itemStockCtx, itemData.labels, [{color:'#137184', values:itemData.stockSeries}]);
-    drawGroupedBars(itemFlowCtx, itemData.labels, [
-      {color:'#2f9e70', values:itemData.inSeries},
-      {color:'#d9654b', values:itemData.outSeries}
-    ]);
+    // 5. Stock diario del item (line)
+    state.chartInstances.chartItemStock=new Chart(isEl.getContext('2d'),{
+      type:'line',
+      data:{
+        labels:itemData.labels,
+        datasets:[{
+          label:'Stock diario',
+          data:itemData.stockSeries,
+          borderColor:'#137184',backgroundColor:'rgba(19,113,132,0.1)',
+          borderWidth:2.5,pointRadius:3,pointHoverRadius:6,fill:true,tension:0.25
+        }]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        plugins:{
+          legend:{display:false},
+          tooltip:{callbacks:{label:ctx=>`Saldo: ${fmt(ctx.parsed.y)} u.`}},
+          datalabels:{
+            display:ctx=>{
+              const vals=ctx.dataset.data; const i=ctx.dataIndex;
+              return i===0||i===vals.length-1||(i>0&&vals[i]!==vals[i-1]&&(i===vals.length-1||vals[i]!==vals[i+1]));
+            },
+            color:'#0a4852',font:{size:9,weight:'700'},anchor:'top',align:'top',
+            formatter:v=>fmt(v)
+          }
+        },
+        scales:{
+          x:{title:axisT('Dia del mes'),ticks:{font:FONT_SM,color:AXIS_CLR,maxTicksLimit:16}},
+          y:{title:axisT('Unidades en stock'),ticks:{font:FONT_SM,color:AXIS_CLR},beginAtZero:false,grid:{color:GRID_CLR}}
+        }
+      }
+    });
+
+    // 6. Entradas vs salidas diarias del item (bar)
+    state.chartInstances.chartItemFlow=new Chart(ifEl.getContext('2d'),{
+      type:'bar',
+      data:{
+        labels:itemData.labels,
+        datasets:[
+          {label:'Entradas',data:itemData.inSeries,backgroundColor:'rgba(47,158,112,0.78)',borderColor:'#2f9e70',borderWidth:1,borderRadius:3},
+          {label:'Salidas',data:itemData.outSeries,backgroundColor:'rgba(217,101,75,0.78)',borderColor:'#d9654b',borderWidth:1,borderRadius:3}
+        ]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        plugins:{
+          legend:{position:'bottom',labels:{font:FONT_SM,color:AXIS_CLR,boxWidth:12}},
+          tooltip:{mode:'index'},
+          datalabels:{
+            color:'#1f4f5b',font:{size:9,weight:'700'},anchor:'end',align:'top',
+            formatter:v=>v>0?fmt(v):'',
+            display:ctx=>Number(ctx.dataset.data[ctx.dataIndex]||0)>0
+          }
+        },
+        scales:{
+          x:{title:axisT('Dia del mes'),ticks:{font:FONT_SM,color:AXIS_CLR,maxTicksLimit:16}},
+          y:{title:axisT('Unidades'),ticks:{font:FONT_SM,color:AXIS_CLR},beginAtZero:true,grid:{color:GRID_CLR}}
+        }
+      }
+    });
   }
 }
 
@@ -1793,7 +2384,7 @@ function renderSemaforoArea(model){
 
   table.innerHTML=`
     <table>
-      <thead><tr><th>Prioridad</th><th>Area/Servicio</th><th>Salidas acumuladas</th><th>Estado</th></tr></thead>
+      <thead><tr><th>Prioridad</th><th>Area/Proveedor</th><th>Salidas acumuladas</th><th>Estado</th></tr></thead>
       <tbody>
       ${rows.map((r0,i)=>`<tr>
         <td>${i+1}</td>
@@ -1874,6 +2465,8 @@ function invalidateDashboardClientCache(){
   state.dashboardRaw=null;
   state.dashboard=null;
   state.dashboardTableKey='';
+  state.trackingCache={};
+  state.trackingRaw=null;
 }
 
 async function loadDashboard(force){
@@ -1918,7 +2511,7 @@ async function loadDashboard(force){
       state.selectedItems = kept.size ? kept : null;
     }
     renderDashboardPanels();
-    setTimeout(()=>renderLassoSelector(out), 0);
+    updateHeaderMonth(state.dashboardMonth);
   }catch(e){ showMsg(e); }
 }
 
@@ -1990,7 +2583,6 @@ function renderDashboardPanels(){
       <span class="insight-chip">Fecha corte activa: ${model.cutoffLabel}</span>
       <span class="insight-chip">Consumo acumulado: ${fmt(k.consumoAcum)}</span>
       <span class="insight-chip">Run-rate diario: ${fmt(Math.round(k.runRate))}</span>
-      ${state.selectedItems?`<span class="insight-chip alert">Filtro lasso activo: ${state.selectedItems.size} item(s)</span>`:''}
       <span class="insight-chip">Ficha activa: ${esc(state.selectedSheetItem || '-')}</span>`;
   renderItemSheet(out, model);
   requestAnimationFrame(()=>renderDashboardCharts(out, model));
@@ -2004,6 +2596,7 @@ function renderMovements(){
   const app=document.getElementById('app');
   const items=(state.bootstrap && state.bootstrap.items)||[];
   const services=(state.bootstrap && state.bootstrap.services)||[];
+  const DEFAULT_PROVIDER='CONSORCIO CDB';
   const today = new Date().toISOString().slice(0,10);
 
   if(!state.selectedSheetItem && items.length){
@@ -2050,8 +2643,8 @@ function renderMovements(){
             <select id="m_item">${items.map(i=>`<option value="${escAttr(i.item_code)}">${esc(i.item_code)} - ${esc(i.item_name)}</option>`).join('')}</select>
           </div>
           <div>
-            <label>Servicio</label>
-            <input id="m_service_search" type="text" placeholder="Buscar servicio" />
+            <label>Proveedor / Area</label>
+            <input id="m_service_search" type="text" placeholder="Buscar proveedor o area" />
             <select id="m_service">${services.map(s=>`<option value="${escAttr(s.service_name)}">${esc(s.service_name)}</option>`).join('')}</select>
           </div>
           <div>
@@ -2086,6 +2679,7 @@ function renderMovements(){
     if(t==='OUT') outBtn.classList.add('active');
     if(t==='IN') inBtn.classList.add('active');
     applyMovementVisuals();
+    adaptProviderForType();
   }
 
   document.getElementById('btnOut').onclick=()=>setType('OUT');
@@ -2093,6 +2687,7 @@ function renderMovements(){
   const itemSelect=document.getElementById('m_item');
   const serviceSelect=document.getElementById('m_service');
   const allServiceOptions=[...serviceSelect.options].map(o=>({value:o.value,text:o.text}));
+  const defaultProvider=allServiceOptions.find(o=>String(o.value).toUpperCase()===DEFAULT_PROVIDER) || null;
   const itemMap={};
   items.forEach(i=>{ itemMap[String(i.item_code)] = i; });
 
@@ -2164,8 +2759,8 @@ function renderMovements(){
     }
     if(help){
       help.textContent = type==='OUT'
-        ? 'Modo SALIDA: descuenta unidades del stock.'
-        : 'Modo ENTRADA: suma unidades al stock.';
+        ? 'Modo SALIDA: descuenta unidades del stock y usa el area/proveedor destino.'
+        : 'Modo ENTRADA: suma unidades del stock desde proveedor (por defecto CONSORCIO CDB).';
     }
     if(save){
       save.textContent = type==='OUT' ? 'Registrar salida' : 'Registrar entrada';
@@ -2190,9 +2785,8 @@ function renderMovements(){
     host.innerHTML=filtered.map(i=>{
       const active=String(i.item_code)===String(itemSelect.value);
       const c=colorFromItemCode(i.item_code);
-      return `<button class="movement-item ${active?'active':''}" data-code="${escAttr(i.item_code)}" style="border-left-color:${c.border};border-color:${active?c.border:'#cddfe5'};background:${active?c.bgStrong:c.bgSoft}">
-        <div class="main"><span>${esc(i.item_code)}</span></div>
-        <div class="sub">${esc(i.item_name)}</div>
+      return `<button class="movement-item ${active?'active':''}" data-code="${escAttr(i.item_code)}" data-tooltip="${escAttr(i.item_name)}" style="border-left-color:${c.border};border-color:${active?c.border:'#cddfe5'};background:${active?c.bgStrong:c.bgSoft}">
+        <div class="main"><span style="font-size:0.9rem">${esc(i.item_code)}</span></div>
       </button>`;
     }).join('');
     [...host.querySelectorAll('.movement-item')].forEach(btn=>{
@@ -2219,6 +2813,17 @@ function renderMovements(){
   document.getElementById('movementItemSearch').oninput=renderMovementItemList;
   renderMovementItemList();
   applyMovementVisuals();
+
+  function adaptProviderForType(){
+    const type=state.movementType==='IN'?'IN':'OUT';
+    if(type==='IN' && defaultProvider){
+      serviceSelect.value=defaultProvider.value;
+    }
+    const lockHint=document.getElementById('moveHelp');
+    if(lockHint && type==='IN' && defaultProvider){
+      lockHint.textContent='Modo ENTRADA: proveedor sugerido CONSORCIO CDB (puede seleccionar otro proveedor registrado).';
+    }
+  }
 
   document.getElementById('m_service_search').addEventListener('input',(e)=>{
     const q=String(e.target.value||'').trim().toLowerCase();
@@ -2250,7 +2855,7 @@ function renderMovements(){
 
       if(!payload.movement_date){ showMsg('Seleccione la fecha.'); return; }
       if(!payload.item_code){ showMsg('Seleccione un item.'); return; }
-      if(!payload.service_name){ showMsg('Seleccione un servicio.'); return; }
+      if(!payload.service_name){ showMsg('Seleccione un proveedor/area.'); return; }
       if(!payload.quantity || payload.quantity<=0){ showMsg('Ingrese una cantidad valida.'); return; }
 
       await safeServer('createMovement',payload);
@@ -2264,6 +2869,7 @@ function renderMovements(){
       document.getElementById('m_qty').focus();
     }catch(e){ showMsg(e); }
   };
+  adaptProviderForType();
 }
 
 function renderItems(){
@@ -2313,19 +2919,19 @@ function renderServices(){
   app.innerHTML=`
   <section class="card">
     <h2>${VIEW_LABELS.services}</h2>
-    <p class="help">Uso administrativo. Agregue nuevos servicios.</p>
+    <p class="help">Uso administrativo. Agregue nuevos proveedores (fuentes de entrada).</p>
 
     <div class="inline">
       <div>
-        <label>Nombre del servicio</label>
-        <input id="s_name" type="text" placeholder="Ejemplo: QUIROFANO URGENCIAS"/>
+        <label>Nombre del proveedor</label>
+        <input id="s_name" type="text" placeholder="Ejemplo: CONSORCIO CDB"/>
       </div>
-      <button id="saveService">Crear servicio</button>
+      <button id="saveService">Crear proveedor</button>
     </div>
 
     <div class="table" style="margin-top:12px">
       <table>
-        <thead><tr><th>Servicio</th><th>Activo</th></tr></thead>
+        <thead><tr><th>Proveedor</th><th>Activo</th></tr></thead>
         <tbody>${services.map(s=>`<tr><td>${esc(s.service_name)}</td><td>${s.active?'Si':'No'}</td></tr>`).join('')}</tbody>
       </table>
     </div>
@@ -2334,7 +2940,7 @@ function renderServices(){
   document.getElementById('saveService').onclick=async()=>{
     try{
       await safeServer('createService',{token:state.token,service_name:document.getElementById('s_name').value});
-      showMsg('Servicio creado.',true);
+      showMsg('Proveedor creado.',true);
       invalidateDashboardClientCache();
       await loadBootstrap();
       renderServices();
@@ -2370,6 +2976,30 @@ function esc(v){
   return String(v==null?'':v).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
 }
 function escAttr(v){ return esc(v); }
+
+// Global tooltip for item panel (works inside overflow containers)
+(function setupGlobalTooltip(){
+  const tt=document.createElement('div');
+  tt.id='globalItemTooltip';
+  document.body.appendChild(tt);
+  document.addEventListener('mouseover',e=>{
+    const btn=e.target.closest('[data-tooltip]');
+    if(!btn){ tt.style.display='none'; return; }
+    tt.textContent=btn.getAttribute('data-tooltip')||'';
+    tt.style.display='block';
+    tt.style.left=(e.clientX+14)+'px';
+    tt.style.top=(e.clientY-10)+'px';
+  });
+  document.addEventListener('mouseout',e=>{
+    if(!e.target.closest('[data-tooltip]')) tt.style.display='none';
+  });
+  document.addEventListener('mousemove',e=>{
+    if(tt.style.display==='block'){
+      tt.style.left=(e.clientX+14)+'px';
+      tt.style.top=(e.clientY-10)+'px';
+    }
+  });
+})();
 
 (async function init(){
   if(!state.token){ renderLogin(); return; }

@@ -8,6 +8,7 @@ const CONFIG = {
   SESSION_PREFIX: 'SESSION_',
   USERS_PROP_KEY: 'KARDEX_USERS_JSON',
   PASSWORD_PEPPER_KEY: 'KARDEX_PASSWORD_PEPPER',
+  DEFAULT_PROVIDER: 'CONSORCIO CDB',
   WARMUP_TRIGGER_FN: 'warmupDashboardCachesJob',
   WARMUP_TRIGGER_HOUR: 4
 };
@@ -130,7 +131,7 @@ function getDashboardInternal_(month) {
   const mon = parsed.month;
   const fingerprints = getMovementsFingerprint_() + '_' + getItemsFingerprint_();
   const monthKey = Utilities.formatDate(new Date(year, mon - 1, 1), Session.getScriptTimeZone(), 'yyyy-MM');
-  const cacheKey = 'DASH_V5_' + monthKey + '_' + fingerprints;
+  const cacheKey = buildCacheKey_('DASH_V6', monthKey, fingerprints);
   const scriptCache = CacheService.getScriptCache();
   const cached = scriptCache.get(cacheKey);
   if (cached) return JSON.parse(cached);
@@ -254,7 +255,7 @@ function getMonthlyClosure(payload) {
   const parsedInput = parseMonth_(monthInput);
   const monthKeyInput = Utilities.formatDate(new Date(parsedInput.year, parsedInput.month - 1, 1), Session.getScriptTimeZone(), 'yyyy-MM');
   const fingerprint = getMovementsFingerprint_() + '_' + getItemsFingerprint_();
-  const cacheKey = 'CLOSURE_V3_' + monthKeyInput + '_' + fingerprint;
+  const cacheKey = buildCacheKey_('CLOSURE_V4', monthKeyInput, fingerprint);
   const cached = CacheService.getScriptCache().get(cacheKey);
   if (cached) return JSON.parse(cached);
   const persisted = getPersistedClosureCache_(cacheKey);
@@ -370,7 +371,7 @@ function createMovement(payload) {
   const session = requireSession_(payload && payload.token, ['admin', 'operator']);
   const movementDate = String((payload && payload.movement_date) || '').trim();
   const itemCode = String((payload && payload.item_code) || '').trim().toUpperCase();
-  const serviceName = String((payload && payload.service_name) || '').trim().toUpperCase();
+  let serviceName = String((payload && payload.service_name) || '').trim().toUpperCase();
   const moveType = String((payload && payload.move_type) || '').trim().toUpperCase();
   const quantity = Number((payload && payload.quantity) || 0);
   const ticketNo = String((payload && payload.ticket_no) || '').trim().slice(0, 80);
@@ -378,9 +379,19 @@ function createMovement(payload) {
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(movementDate)) throw new Error('Fecha invalida');
   if (!itemCode) throw new Error('Item requerido');
-  if (!serviceName) throw new Error('Servicio requerido');
+  if (moveType === 'IN' && !serviceName) {
+    serviceName = CONFIG.DEFAULT_PROVIDER;
+  }
+  if (!serviceName) throw new Error('Proveedor/area requerido');
   if (!(moveType === 'IN' || moveType === 'OUT')) throw new Error('Tipo invalido');
   if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('Cantidad invalida');
+
+  if (moveType === 'IN') {
+    const providers = listServices_().map((s) => String(s.service_name || '').toUpperCase());
+    if (providers.indexOf(serviceName) === -1) {
+      throw new Error('Proveedor no registrado. Agreguelo en Catalogo de proveedores.');
+    }
+  }
 
   const ws = getSheet_(SHEETS.MOVEMENTS.name, SHEETS.MOVEMENTS.headers);
   ws.appendRow([
@@ -396,7 +407,7 @@ function createMovement(payload) {
     new Date().toISOString()
   ]);
 
-  audit_('CREATE', 'Movement', itemCode, `${moveType} qty=${quantity} service=${serviceName}`, session.username);
+  audit_('CREATE', 'Movement', itemCode, `${moveType} qty=${quantity} provider_or_area=${serviceName}`, session.username);
   return { ok: true };
 }
 
@@ -419,14 +430,14 @@ function createItem(payload) {
 function createService(payload) {
   const session = requireSession_(payload && payload.token, ['admin']);
   const serviceName = String((payload && payload.service_name) || '').trim().toUpperCase().slice(0, 120);
-  if (!serviceName) throw new Error('Servicio requerido');
+  if (!serviceName) throw new Error('Proveedor requerido');
 
   const exists = listServices_().some((s) => s.service_name.toUpperCase() === serviceName);
-  if (exists) throw new Error('Servicio ya existe');
+  if (exists) throw new Error('Proveedor ya existe');
 
   const ws = getSheet_(SHEETS.SERVICES.name, SHEETS.SERVICES.headers);
   ws.appendRow([serviceName, true, new Date().toISOString()]);
-  audit_('CREATE', 'Service', serviceName, '', session.username);
+  audit_('CREATE', 'Provider', serviceName, '', session.username);
   return { ok: true };
 }
 
@@ -534,6 +545,8 @@ function ensureSchema_() {
   getSheet_(SHEETS.SERVICES.name, SHEETS.SERVICES.headers);
   getSheet_(SHEETS.MOVEMENTS.name, SHEETS.MOVEMENTS.headers);
   getSheet_(SHEETS.AUDIT.name, SHEETS.AUDIT.headers);
+  ensureDefaultProviders_();
+  ensureDefaultUsers_();
 }
 
 function spreadsheet_() {
@@ -725,6 +738,16 @@ function setPersistedCache_(key, value) {
   }
 }
 
+function buildCacheKey_(prefix, monthKey, fingerprint) {
+  const raw = String(prefix || '') + '|' + String(monthKey || '') + '|' + String(fingerprint || '');
+  return String(prefix || 'K') + '_' + String(monthKey || '') + '_' + hashText_(raw).slice(0, 40);
+}
+
+function hashText_(text) {
+  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(text || ''), Utilities.Charset.UTF_8);
+  return bytesToHex_(bytes);
+}
+
 function getPersistedClosureCache_(key) {
   return getPersistedCache_(key);
 }
@@ -796,6 +819,46 @@ function getUsers_() {
 
 function saveUsers_(users) {
   PropertiesService.getScriptProperties().setProperty(CONFIG.USERS_PROP_KEY, JSON.stringify(users));
+}
+
+function ensureDefaultUsers_() {
+  const users = getUsers_();
+  const defaults = [
+    { username: 'user', password: '123', role: 'admin' },
+    { username: 'florencia', password: '123', role: 'operator' },
+    { username: 'perla', password: '456', role: 'operator' },
+    { username: 'estela', password: '789', role: 'operator' },
+    { username: 'gregoria', password: '101112', role: 'operator' },
+    { username: 'nohelia', password: '131415', role: 'operator' },
+    { username: 'olga', password: '161718', role: 'operator' },
+    { username: 'olga161718', password: '161718', role: 'operator' }
+  ];
+
+  let changed = false;
+  for (let i = 0; i < defaults.length; i++) {
+    const d = defaults[i];
+    const uname = String(d.username || '').trim().toLowerCase();
+    if (!uname || users[uname]) continue;
+    const salt = Utilities.getUuid().replace(/-/g, '');
+    users[uname] = {
+      passwordHash: hashPassword_(String(d.password || ''), salt),
+      salt: salt,
+      role: String(d.role || 'operator'),
+      active: true
+    };
+    changed = true;
+  }
+  if (changed) saveUsers_(users);
+}
+
+function ensureDefaultProviders_() {
+  const providers = listServices_();
+  const key = String(CONFIG.DEFAULT_PROVIDER || '').toUpperCase();
+  if (!key) return;
+  const exists = providers.some((s) => String(s.service_name || '').toUpperCase() === key);
+  if (exists) return;
+  const ws = getSheet_(SHEETS.SERVICES.name, SHEETS.SERVICES.headers);
+  ws.appendRow([key, true, new Date().toISOString()]);
 }
 
 function getPepper_() {
